@@ -1,0 +1,103 @@
+/* src/styles/Results.css */
+.results-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+}
+
+.results-card {
+  background: white;
+  padding: 50px;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  max-width: 600px;
+  width: 100%;
+  text-align: center;
+}
+
+.result-icon {
+  width: 100px;
+  height: 100px;
+  margin: 0 auto 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 60px;
+  font-weight: bold;
+}
+
+.result-icon.passed {
+  background: #d4edda;
+  color: #28a745;
+}
+
+.result-icon.failed {
+  background: #f8d7da;
+  color: #dc3545;
+}
+
+.results-card h1 {
+  color: #333;
+  margin-bottom: 20px;
+  font-size: 32px;
+}
+
+.result-status {
+  padding: 15px 30px;
+  border-radius: 30px;
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 40px;
+  display: inline-block;
+}
+
+.result-status.passed {
+  background: #d4edda;
+  color: #28a745;
+}
+
+.result-status.failed {
+  background: #f8d7da;
+  color: #dc3545;
+}
+
+.result-details {
+  text-align: left;
+  margin-bottom: 40px;
+}
+
+.result-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.result-item:last-child {
+  border-bottom: none;
+}
+
+.result-item .label {
+  color: #666;
+  font-weight: 600;
+}
+
+.result-item .value {
+  color: #333;
+  font-weight: 700;
+}
+
+.result-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+.result-actions .btn-primary {
+  padding: 12px 40px;
+  font-size: 16px;
+}
