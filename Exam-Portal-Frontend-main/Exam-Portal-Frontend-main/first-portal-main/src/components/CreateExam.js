@@ -123,8 +123,8 @@ const CreateExam = () => {
         body: formData
       });
 
-      setCreatedExamCode(data.exam.exam_code);
-      setCreatedExamTitle(data.exam.title);
+      setCreatedExamCode(data.exam_code || data?.exam?.exam_code);
+      setCreatedExamTitle(data.title || title?.trim() || data?.exam?.title || "");
       setShowSuccessModal(true);
 
       // Reset form
