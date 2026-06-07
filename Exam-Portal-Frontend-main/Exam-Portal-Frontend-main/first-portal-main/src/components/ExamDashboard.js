@@ -601,9 +601,9 @@ const ExamDashboard = () => {
     
     // Only modify paths if it's not a blob or data URI
     if (!pdfSrc.startsWith('blob:') && !pdfSrc.startsWith('http://') && !pdfSrc.startsWith('https://') && !pdfSrc.startsWith('data:')) {
-      // Relative path — ensure it starts with /
+      // Relative path — prepend BACKEND URL (not frontend URL)
       if (!pdfSrc.startsWith('/')) pdfSrc = '/' + pdfSrc;
-      pdfSrc = `${window.location.origin}${pdfSrc}`;
+      pdfSrc = `https://exam-backend-eg8c.onrender.com${pdfSrc}`;
     }
 
     return (
