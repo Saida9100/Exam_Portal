@@ -179,15 +179,13 @@ const ResultPage = () => {
 </body>
 </html>`;
 
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `AnswerKey_${result.exam_code || result.exam_title.replace(/\s+/g,'_')}.html`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    // Convert HTML to PDF using browser print
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
   };
 
   // ─── Print Report ─────────────────────────────────────────────────────────
