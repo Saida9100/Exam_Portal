@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Spinner } from 'react-bootstrap';
 
+/* ── Check status row ───────────────────────────────────────────── */
 const CheckItem = ({ label, passed, loading }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: '#f8f9fa', borderRadius: 8 }}>
     <div style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -21,11 +22,13 @@ const CheckItem = ({ label, passed, loading }) => (
   </div>
 );
 
+/* ── PreExamCheck ───────────────────────────────────────────────── */
 const PreExamCheck = ({ onComplete, examTitle }) => {
   const videoRef = useRef(null);
   const [status, setStatus] = useState({ camera: false, mic: false, face: false, lighting: false });
-  const [loadingState, setLoadingState] = useState('idle');
+  const [loadingState, setLoadingState] = useState('idle'); // idle | requesting | checking | ready | error
   const [errorMsg, setErrorMsg] = useState('');
+  const [progressMsg, setProgressMsg] = useState('');
 
   useEffect(() => {
     let stream = null;
@@ -34,62 +37,89 @@ const PreExamCheck = ({ onComplete, examTitle }) => {
 
     const startCheck = async () => {
       try {
+        /* 1 ── request camera & mic */
         setLoadingState('requesting');
+        setProgressMsg('Requesting Camera & Mic...');
         setErrorMsg('');
 
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
+        if (videoRef.current) videoRef.current.srcObject = stream;
         setStatus(s => ({ ...s, camera: true, mic: true }));
         setLoadingState('checking');
+        setProgressMsg('Loading AI Models (this may take a moment)...');
 
-        // Load face-api if not already loaded
+        /* 2 ── load face-api.js from CDN if not already present */
         if (!window.faceapi) {
-          await new Promise((resolve, reject) => {
-            const s = document.createElement('script');
-            s.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js';
-            s.onload = resolve;
-            s.onerror = reject;
-            document.body.appendChild(s);
-          });
-        }
-
-        if (!window.faceapiNetsLoaded) {
-          await window.faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model');
-          window.faceapiNetsLoaded = true;
-        }
-
-        const runCheck = async () => {
-          if (cancelled || !videoRef.current || videoRef.current.paused) {
-            if (!cancelled) checkTimer = setTimeout(runCheck, 500);
+          try {
+            await new Promise((resolve, reject) => {
+              const s = document.createElement('script');
+              s.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js';
+              s.onload = resolve;
+              s.onerror = () => reject(new Error('Failed to load face-api.js from CDN'));
+              document.body.appendChild(s);
+            });
+          } catch (loadErr) {
+            console.error('face-api load error:', loadErr);
+            setErrorMsg('Could not load face detection library. Please check your internet connection and refresh.');
+            setLoadingState('error');
             return;
           }
+        }
+
+        /* 3 ── load tiny face detector model */
+        if (!window.faceapiNetsLoaded) {
+          try {
+            await window.faceapi.nets.tinyFaceDetector.loadFromUri(
+              'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/'
+            );
+            window.faceapiNetsLoaded = true;
+          } catch (modelErr) {
+            console.error('face-api model load error:', modelErr);
+            setErrorMsg('Could not load face detection model. Please check your internet connection and refresh.');
+            setLoadingState('error');
+            return;
+          }
+        }
+
+        setProgressMsg('Detecting face...');
+
+        /* 4 ── polling loop: wait until a face is detected */
+        const runCheck = async () => {
+          if (cancelled) return;
+
+          if (!videoRef.current || videoRef.current.paused) {
+            checkTimer = setTimeout(runCheck, 500);
+            return;
+          }
+
           try {
             const detections = await window.faceapi.detectAllFaces(
               videoRef.current,
               new window.faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 })
             );
-            const hasFace = detections.length >= 1;
-            if (hasFace) {
+
+            if (detections.length >= 1) {
               setStatus(s => ({ ...s, face: true, lighting: true }));
               setLoadingState('ready');
-              return;
+              setProgressMsg('');
+              return; // done – stop looping
             } else {
               setStatus(s => ({ ...s, face: false, lighting: false }));
             }
           } catch (e) {
             console.warn('Check iteration failed', e);
           }
+
+          // keep trying
           if (!cancelled) checkTimer = setTimeout(runCheck, 500);
         };
 
         checkTimer = setTimeout(runCheck, 1000);
       } catch (err) {
         console.error('Error starting check:', err);
-        setErrorMsg(err.message || 'Failed to access camera/microphone');
+        setErrorMsg(err.message || 'Failed to access camera/microphone. Please allow permissions and refresh.');
         setLoadingState('error');
       }
     };
@@ -130,11 +160,19 @@ const PreExamCheck = ({ onComplete, examTitle }) => {
             <CheckItem label="Lighting OK" passed={status.lighting} loading={loadingState === 'checking'} />
           </div>
         </div>
+
+        {/* progress / error message */}
+        {progressMsg && (
+          <div style={{ marginTop: 16, padding: 12, background: '#e3f2fd', borderRadius: 8, color: '#1565c0', textAlign: 'center', fontSize: 13 }}>
+            {progressMsg}
+          </div>
+        )}
         {errorMsg && (
           <div style={{ marginTop: 16, padding: 12, background: '#ffebee', borderRadius: 8, color: '#c62828', textAlign: 'center' }}>
             {errorMsg}
           </div>
         )}
+
         {allPassed && (
           <div style={{ marginTop: 24, textAlign: 'center' }}>
             <div style={{ color: '#4caf50', fontWeight: 700, marginBottom: 12 }}>✅ All checks passed! You're ready to start.</div>
