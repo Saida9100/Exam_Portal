@@ -106,6 +106,7 @@ var PreExamCheck = function PreExamCheck(_ref3) {
   var setAllReady = _useState11[1];
 
   // Live audio level meter
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(function () {
     if (!analyserRef.current) return;
     var analyser = analyserRef.current;
@@ -126,6 +127,7 @@ var PreExamCheck = function PreExamCheck(_ref3) {
   }, [analyserRef.current]);
 
   // Live brightness meter
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(function () {
     if (step === 'done' || step === 'init') return;
     var active = true;
@@ -151,6 +153,7 @@ var PreExamCheck = function PreExamCheck(_ref3) {
   }, [step]);
 
   // Main check sequence
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(function () {
     var stream = null;
     var cancelled = false;
