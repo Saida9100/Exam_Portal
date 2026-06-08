@@ -1,264 +1,284 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 /*
- * ProctorEngine — FIXED version
+ * ProctorEngine  – fixed version
  *
- * Changes from original deployed version:
- * 1. Detection interval: 300ms → 3000ms (was firing 3x per second!)
- * 2. Face detection scoreThreshold: 0.1 → 0.5 (was too sensitive → false "No Face" warnings)
- * 3. Audio threshold: 40 → 100 (was triggering on ambient room noise)
- * 4. Object detection: only "cell phone" now (was also "book", "laptop", "keyboard", "mouse", "remote")
- * 5. Object detection confidence: 0.5 → 0.65 (was flagging random objects)
- * 6. Multiple person frames needed: 2 → 8 consecutive (0.6s → 24s before flagging)
- * 7. Added per-type cooldown of 15 seconds (was 5s debounce in ExamDashboard, but engine itself had none)
- * 8. Removed Low Light check (was triggering with brightness < 15/255 which is pitch black but
- *    combined with face detection misses caused false cascading warnings)
- * 9. Face "no face" threshold: 3 seconds → 10 seconds continuous before flagging
+ * This mirrors the EXACT structure of the deployed ProctorEngine (the `bi` component
+ * in the production bundle) but with corrected detection thresholds so students don't
+ * get false-terminated during exams.
+ *
+ * Key changes vs deployed code:
+ * ┌──────────────────────────┬──────────────┬───────────────┐
+ * │ Setting                  │ Deployed     │ This version  │
+ * ├──────────────────────────┼──────────────┼───────────────┤
+ * │ Detection interval       │ 300 ms       │ 3000 ms       │
+ * │ Face scoreThreshold      │ 0.2          │ 0.5           │
+ * │ No-face trigger time     │ 3 s          │ 10 s          │
+ * │ Object classes           │ 6 (phone,    │ 1 (cell phone)│
+ * │                          │ laptop,book…)│               │
+ * │ Object confidence        │ 0.50         │ 0.66          │
+ * │ Multi-person frames      │ 2            │ 8             │
+ * │ Audio avg threshold      │ 40 / 255     │ 100 / 255     │
+ * └──────────────────────────┴──────────────┴───────────────┘
  */
 
 const ProctorEngine = ({ onViolation, isActive, onReady }) => {
   const videoRef = useRef(null);
-  const [stream, setStream] = useState(null);
-  const [engineActive, setEngineActive] = useState(false);
-
-  // Detection state refs
-  const cocoModelRef = useRef(null);
-  const audioContextRef = useRef(null);
+  const streamRef = useRef(null);
+  const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
-  const noFaceStartRef = useRef(Date.now()); // When we first detected no face
-  const multiPersonCountRef = useRef(0);     // Consecutive frames with multiple people
-  const lastViolationTimeRef = useRef({});    // Per-type cooldown tracking
-  const cancelledRef = useRef(false);
+  const sourceRef = useRef(null);
+  const cocoModelRef = useRef(null);
 
-  // Cooldown between same-type violations (ms)
-  const VIOLATION_COOLDOWN = 15000;  // 15 seconds
+  const [engineReady, setEngineReady] = useState(false);
+  const [showLoading, setShowLoading] = useState(true);
+  const [statusMsg, setStatusMsg] = useState('Initializing ML Engine...');
 
-  // Load coco-ssd model
-  const loadCocoSSD = useCallback(async () => {
-    if (cocoModelRef.current) return cocoModelRef.current;
-    try {
-      if (!window.cocoSsd) {
-        // coco-ssd is loaded via CDN script tag in index.html
-        console.warn('cocoSsd not available on window');
-        return null;
+  // detection state refs
+  const noFaceStartRef = useRef(Date.now());
+  const multiPersonCountRef = useRef(0);
+
+  // ── Initialise camera, audio, models ───────────────────────
+  useEffect(() => {
+    let alive = true;
+
+    if (!isActive) return;
+
+    (async () => {
+      try {
+        setStatusMsg('Requesting Camera & Mic...');
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        if (!alive) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+
+        if (videoRef.current) videoRef.current.srcObject = stream;
+
+        // audio analyser
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          audioCtxRef.current = new AudioCtx();
+          analyserRef.current = audioCtxRef.current.createAnalyser();
+          sourceRef.current = audioCtxRef.current.createMediaStreamSource(stream);
+          sourceRef.current.connect(analyserRef.current);
+          analyserRef.current.fftSize = 256;
+        }
+
+        // load models
+        setStatusMsg('Loading AI Models...');
+        const promises = [];
+
+        const cocoSsd = window.cocoSsd;
+        if (cocoSsd) {
+          promises.push(cocoSsd.load().then(m => { cocoModelRef.current = m; }));
+        }
+
+        const faceapi = window.faceapi;
+        if (faceapi) {
+          promises.push(
+            faceapi.nets.tinyFaceDetector.loadFromUri(
+              'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/'
+            )
+          );
+        }
+
+        await Promise.all(promises);
+
+        if (!alive) return;
+        setEngineReady(true);
+        setStatusMsg('Engine Active');
+        if (onReady) onReady();
+      } catch (err) {
+        console.error('Proctoring Engine Init Error:', err);
+        setStatusMsg('Error starting engine: ' + err.message);
       }
-      const model = await window.cocoSsd.load({ base: 'lite_mobilenet_v2' });
-      cocoModelRef.current = model;
-      return model;
-    } catch (e) {
-      console.warn('Failed to load coco-ssd:', e);
-      return null;
-    }
-  }, []);
+    })();
 
-  // Setup audio analyser
-  const setupAudio = useCallback((mediaStream) => {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const analyser = ctx.createAnalyser();
-      const source = ctx.createMediaStreamSource(mediaStream);
-      source.connect(analyser);
-      analyser.fftSize = 512;
-      audioContextRef.current = ctx;
-      analyserRef.current = analyser;
-    } catch (e) {
-      console.warn('Audio setup failed:', e);
-    }
-  }, []);
+    return () => {
+      alive = false;
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        try { audioCtxRef.current.close(); } catch (_) {}
+        audioCtxRef.current = null;
+      }
+    };
+  }, [isActive, onReady]);
 
-  // Capture current frame as image
+  // ── Capture current frame as base64 JPEG ──────────────────
   const captureFrame = useCallback(() => {
-    if (!videoRef.current) return null;
-    const video = videoRef.current;
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', 0.5);
+    const v = videoRef.current;
+    if (!v) return null;
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.5);
   }, []);
 
-  // Send violation with cooldown
+  // ── Per-type cooldown tracking (15 s) ─────────────────────
+  const lastViolationRef = useRef({});
   const fireViolation = useCallback((type, severity, message) => {
     const now = Date.now();
-    const lastTime = lastViolationTimeRef.current[type] || 0;
-    if (now - lastTime < VIOLATION_COOLDOWN) return; // Skip if cooldown not elapsed
-
-    lastViolationTimeRef.current[type] = now;
+    const last = lastViolationRef.current[type] || 0;
+    if (now - last < 15000) return;           // 15 s cooldown
+    lastViolationRef.current[type] = now;
     onViolation({ type, severity, message, image: captureFrame() });
   }, [onViolation, captureFrame]);
 
-  // Main detection loop
-  const runDetection = useCallback(async () => {
-    if (cancelledRef.current || !videoRef.current || videoRef.current.paused || !isActive) return;
+  // ── Main detection loop ───────────────────────────────────
+  const detect = useCallback(async () => {
+    if (!engineReady || !videoRef.current || videoRef.current.paused || !isActive) return;
 
     const video = videoRef.current;
-    const faceApi = window.faceapi;
+    const faceapi = window.faceapi;
     const cocoModel = cocoModelRef.current;
 
     try {
-      // ── 1. FACE DETECTION (face-api) ──
-      // Higher threshold (0.5) to reduce false "No Face" warnings
-      if (faceApi && faceApi.detectAllFaces) {
-        let faceCount = 0;
+      let faceCount = 0;
+      let personCount = 0;
+
+      /* ── 1. Face detection (face-api) ────────────────────── */
+      if (faceapi && faceapi.detectAllFaces) {
         try {
-          const detections = await faceApi.detectAllFaces(
+          const detections = await faceapi.detectAllFaces(
             video,
-            new faceApi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 })
+            new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 })
           );
           faceCount = detections.length;
-        } catch (faceErr) {
-          // face-api can throw on bad frames — skip this iteration
-          console.warn('Face detection error (skipping):', faceErr.message);
-        }
+        } catch (_) { /* skip bad frame */ }
 
         const now = Date.now();
         if (faceCount === 0) {
-          // Only warn if no face for 10+ continuous seconds
-          if (noFaceStartRef.current === 0) {
+          if (noFaceStartRef.current === 0) noFaceStartRef.current = now;
+          if (now - noFaceStartRef.current > 10000) {          // 10 s continuous
+            fireViolation('No Face Detected', 'High',
+              'No face detected for 10 seconds. Please ensure your face is visible.');
             noFaceStartRef.current = now;
-          } else if (now - noFaceStartRef.current > 10000) {
-            fireViolation(
-              'No Face Detected',
-              'High',
-              'No face detected for 10 seconds. Please ensure your face is visible.'
-            );
           }
         } else {
-          noFaceStartRef.current = 0; // Reset timer when face is detected
+          noFaceStartRef.current = 0;
         }
+      }
 
-        // ── 3. MULTIPLE PERSON ──
-        // Require 8+ consecutive frames with multiple faces (at 3s interval = 24 seconds)
-        if (faceCount > 1) {
-          multiPersonCountRef.current += 1;
-          if (multiPersonCountRef.current >= 8) {
-            fireViolation(
-              'Multiple Person Detection',
-              'Critical',
-              'Multiple faces detected. Only one person should be in the camera view.'
-            );
-            multiPersonCountRef.current = 0;
+      /* ── 2. Object detection (coco-ssd) ─────────────────── */
+      if (cocoModel) {
+        try {
+          const preds = await cocoModel.detect(video);
+          // Only flag actual cell phones at high confidence
+          const phoneFound = preds.some(p => p.class === 'cell phone' && p.score >= 0.66);
+          if (phoneFound) {
+            fireViolation('Mobile Phone Detection', 'Critical',
+              'A mobile phone was detected in your camera view.');
           }
-        } else {
+          personCount = preds.filter(p => p.class === 'person' && p.score >= 0.5).length;
+        } catch (_) { /* skip */ }
+      }
+
+      /* ── 3. Multiple person ──────────────────────────────── */
+      if (Math.max(faceCount, personCount) > 1) {
+        multiPersonCountRef.current += 1;
+        if (multiPersonCountRef.current >= 8) {                 // ~24 s at 3 s interval
+          fireViolation('Multiple Person Detection', 'Critical',
+            'Multiple people detected. Only one person is allowed in frame.');
           multiPersonCountRef.current = 0;
         }
+      } else {
+        multiPersonCountRef.current = 0;
       }
 
-      // ── 2. OBJECT DETECTION (coco-ssd) ──
-      // Only detect "cell phone" with higher confidence (0.65)
-      if (cocoModel && video.videoWidth > 0 && video.videoHeight > 0) {
-        try {
-          const predictions = await cocoModel.detect(video);
-          // Only flag actual cell phones with high confidence
-          const phoneDetected = predictions.some(p =>
-            p.class === 'cell phone' && p.score >= 0.65
-          );
-          if (phoneDetected) {
-            fireViolation(
-              'Mobile Phone Detection',
-              'Critical',
-              'A mobile phone was detected in your camera view.'
-            );
-          }
-        } catch (cocoErr) {
-          console.warn('Object detection error (skipping):', cocoErr.message);
-        }
-      }
-
-      // ── 4. AUDIO MONITORING ──
-      // Higher threshold (100) to avoid false positives from ambient noise
+      /* ── 4. Audio monitoring ─────────────────────────────── */
       if (analyserRef.current) {
         try {
-          const bufferLength = analyserRef.current.frequencyBinCount;
-          const dataArray = new Uint8Array(bufferLength);
-          analyserRef.current.getByteFrequencyData(dataArray);
+          const buf = analyserRef.current.frequencyBinCount;
+          const data = new Uint8Array(buf);
+          analyserRef.current.getByteFrequencyData(data);
           let sum = 0;
-          for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
-          const avg = sum / bufferLength;
-
-          if (avg > 100) {
-            fireViolation(
-              'Audio Violation',
-              'Medium',
-              'Loud background noise or talking detected. Please keep quiet.'
-            );
+          for (let i = 0; i < buf; i++) sum += data[i];
+          if (sum / buf > 100) {
+            fireViolation('Audio Violation', 'Medium',
+              'Loud background noise or talking detected.');
           }
-        } catch (audioErr) {
-          console.warn('Audio analysis error (skipping):', audioErr.message);
-        }
+        } catch (_) { /* skip */ }
       }
     } catch (err) {
-      console.warn('Proctor detection iteration failed:', err);
+      console.warn('Analysis iteration failed:', err);
     }
+  }, [engineReady, isActive, fireViolation]);
 
-    // Schedule next detection (3000ms interval instead of 300ms)
-    if (!cancelledRef.current && isActive) {
-      setTimeout(runDetection, 3000);
-    }
-  }, [isActive, fireViolation]);
-
-  // Start/stop engine
+  // schedule detection every 3 000 ms
   useEffect(() => {
-    let localStream = null;
+    let timer, running = true;
 
-    const startEngine = async () => {
-      try {
-        cancelledRef.current = false;
-
-        // Get camera + mic
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        if (cancelledRef.current) { localStream.getTracks().forEach(t => t.stop()); return; }
-
-        setStream(localStream);
-        if (videoRef.current) {
-          videoRef.current.srcObject = localStream;
-        }
-
-        // Load coco-ssd model in background
-        loadCocoSSD();
-
-        // Setup audio analyser
-        setupAudio(localStream);
-
-        setEngineActive(true);
-        if (onReady) onReady();
-
-        // Start detection loop after a 5-second grace period
-        // (gives models time to load and student to settle)
-        setTimeout(() => {
-          if (!cancelledRef.current) runDetection();
-        }, 5000);
-      } catch (err) {
-        console.error('Error starting proctor engine:', err);
-      }
+    const loop = async () => {
+      if (!running) return;
+      await detect();
+      if (running) timer = setTimeout(loop, 3000);
     };
 
-    if (isActive) {
-      startEngine();
+    if (engineReady && isActive) {
+      timer = setTimeout(loop, 3000);
     }
 
-    return () => {
-      cancelledRef.current = true;
-      if (localStream) localStream.getTracks().forEach(t => t.stop());
-      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        try { audioContextRef.current.close(); } catch (e) { /* ignore */ }
-        audioContextRef.current = null;
+    return () => { running = false; clearTimeout(timer); };
+  }, [engineReady, isActive, detect]);
+
+  // hide loading overlay after 3 s
+  useEffect(() => {
+    if (engineReady) {
+      const t = setTimeout(() => setShowLoading(false), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [engineReady]);
+
+  // dev-tools detection (same as deployed code)
+  useEffect(() => {
+    const handler = () => {
+      const wDiff = window.outerWidth - window.innerWidth > 160;
+      const hDiff = window.outerHeight - window.innerHeight > 160;
+      if (wDiff || hDiff) {
+        onViolation({ type: 'Developer Tools Opened', severity: 'Critical',
+          message: 'Developer tools or inspect element detected.' });
       }
     };
-  }, [isActive, loadCocoSSD, setupAudio, runDetection, onReady]);
+    window.addEventListener('resize', handler);
+    handler();
+    return () => window.removeEventListener('resize', handler);
+  }, [onViolation]);
 
-  // Hidden video element for camera feed
+  /* ── Render: Live Proctoring widget (bottom-left, same as deployed) ── */
+  if (!isActive) return null;
+
   return (
-    <video
-      ref={videoRef}
-      autoPlay
-      muted
-      playsInline
-      style={{ display: 'none' }}
-    />
+    <div style={{
+      position: 'fixed', bottom: 20, left: 20, width: 200,
+      background: '#fff', borderRadius: 12,
+      boxShadow: '0 8px 30px rgba(0,0,0,0.15)', overflow: 'hidden',
+      zIndex: 9999, display: 'flex', flexDirection: 'column'
+    }}>
+      {/* header */}
+      <div style={{
+        background: '#2D0040', color: '#fff', padding: '6px 12px',
+        fontSize: 12, fontWeight: 600, display: 'flex', justifyContent: 'space-between'
+      }}>
+        <span>Live Proctoring</span>
+        {engineReady
+          ? <span style={{ color: '#4caf50' }}>● Active</span>
+          : <span style={{ color: '#ff9800' }}>● Loading</span>}
+      </div>
+
+      {/* video preview */}
+      <div style={{ position: 'relative', background: '#000', width: '100%', aspectRatio: '4/3' }}>
+        <video ref={videoRef} autoPlay muted playsInline
+          style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} />
+        {showLoading && (
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            background: 'rgba(45,0,64,0.9)', color: '#fff',
+            padding: '6px 10px', fontSize: 11, textAlign: 'center'
+          }}>
+            {statusMsg}
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 
