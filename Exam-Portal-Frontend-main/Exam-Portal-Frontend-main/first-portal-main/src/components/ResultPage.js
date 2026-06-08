@@ -37,7 +37,41 @@ const ResultPage = () => {
       setError('');
       const data = await apiService.getResult(attemptId);
       // Normalise: backend may wrap data
-      setResult(data?.data || data);
+      let resultData = data?.data || data;
+      
+      // 🔧 FIX: Ensure answers array exists and log for debugging
+      console.log('📊 Raw result data from backend:', JSON.stringify(resultData, null, 2));
+
+      // 🔧 FIX: Normalise answers - backend might use different field names
+      if (resultData.answers && Array.isArray(resultData.answers)) {
+        resultData = {
+          ...resultData,
+          answers: resultData.answers.map(a => ({
+            // Handle different possible field names from backend
+            student_answer: a.student_answer ?? a.selected_option ?? a.selected_answer ?? a.answer ?? null,
+            correct_answer: a.correct_answer ?? a.correctOption ?? a.correct ?? null,
+            is_correct: a.is_correct ?? a.correct ?? false,
+            question_id: a.question_id ?? a.qid ?? null,
+            question_number: a.question_number ?? a.qno ?? a.questionNo ?? null,
+          }))
+        };
+      }
+
+      // 🔧 FIX: Recalculate attempted from actual answers data, 
+      // giving it priority over backend's attempted field
+      if (resultData.answers && Array.isArray(resultData.answers)) {
+        const realAttempted = resultData.answers.filter(
+          a => a.student_answer != null && a.student_answer !== '' && a.student_answer !== 'null' && a.student_answer !== 'undefined'
+        ).length;
+        // Override backend's attempted if it seems wrong
+        const backendAttempted = resultData.attempted ?? 0;
+        if (realAttempted > backendAttempted) {
+          resultData.attempted = realAttempted;
+          resultData.unanswered = (resultData.total_questions ?? resultData.answers.length) - realAttempted;
+        }
+      }
+
+      setResult(resultData);
     } catch (err) {
       setError(err.message || 'Failed to fetch results');
     } finally {
@@ -81,7 +115,7 @@ const ResultPage = () => {
         let statusText, statusColor;
         const rowBg = index % 2 === 0 ? '#fff' : '#fafafa';
 
-        if (!studentAns) {
+        if (!studentAns || studentAns === '' || studentAns === 'null' || studentAns === 'undefined') {
           statusText = 'Not Answered'; statusColor = '#ff9800'; unansweredCount++;
         } else if (isCorrect) {
           statusText = 'Correct'; statusColor = '#4caf50'; correctCount++;
@@ -209,116 +243,117 @@ const ResultPage = () => {
   .score-banner .score { font-size:48px; font-weight:700; margin-bottom:8px; }
   .f { text-align:center; margin-top:40px; color:#aaa; font-size:12px; border-top:1px solid #e0e0e0; padding-top:16px; }
 </style></head><body>
-  <div class="h"><h1>ExamPortal - Result Report</h1><p style="color:#666;">${dateStr}</p></div>
-  <table>
-    <tr><th>Student</th><td>${studentName}</td></tr>
-    <tr><th>Email</th><td>${studentEmail}</td></tr>
-    <tr><th>Exam</th><td>${result.exam_title}</td></tr>
-    <tr><th>Exam Code</th><td>${result.exam_code || 'N/A'}</td></tr>
-    <tr><th>Submitted At</th><td>${new Date(result.submitted_at).toLocaleString('en-IN')}</td></tr>
-    <tr><th>Time Taken</th><td>${result.time_taken ? Math.floor(result.time_taken / 60) + 'm ' + (result.time_taken % 60) + 's' : 'N/A'}</td></tr>
-    <tr><th>Score</th><td>${result.score} / ${result.total_questions} (${((result.score / result.total_questions) * 100).toFixed(1)}%)</td></tr>
-  </table>
-  <div class="score-banner">
-    <div class="score">${result.score} / ${result.total_questions}</div>
-    <div>${((result.score / result.total_questions) * 100).toFixed(1)}% Score</div>
-  </div>
-  <div class="f">ExamPortal - Secure Online Examination Platform</div>
-</body></html>`);
+<div class="h"><h1>Exam Result Report</h1><p>${studentEmail}</p></div>
+<div class="score-banner"><div class="score">${result.score ?? 0} / ${result.total_questions ?? 0}</div><div>${result.total_questions > 0 ? ((result.score / result.total_questions) * 100).toFixed(1) : 0}%</div></div>
+<table>
+<tr><th>#</th><th>Correct</th><th>Your Answer</th><th>Status</th></tr>`);
+    if (result.answers && Array.isArray(result.answers)) {
+      result.answers.forEach((a,i) => {
+        const st = a.student_answer;
+        const status = (!st || st === '' || st === 'null') ? 'Not Answered' : a.is_correct ? 'Correct' : 'Wrong';
+        w.document.write(`<tr><td>${i+1}</td><td>${a.correct_answer || '—'}</td><td>${st || '—'}</td><td>${status}</td></tr>`);
+      });
+    }
+    w.document.write('</table><div class="f">Generated on ' + dateStr + '</div></body></html>');
     w.document.close();
-    w.focus();
     setTimeout(() => w.print(), 500);
   };
 
-  // ─── Topbar helper ────────────────────────────────────────────────────────
-
+  // ─── Helper check ─────────────────────────────────────────────────────────
   const Topbar = ({ title }) => (
-    <div className="dashboard-topbar">
-      <h3>{title}</h3>
-      <div className="user-info">
-        <div>
-          <div style={{ fontWeight:600, fontSize:14, color:'#1a1a2e' }}>{studentName}</div>
-          <div style={{ fontSize:12, color:'#888' }}>{studentEmail}</div>
-        </div>
-        <div className="user-avatar" style={{ background:'linear-gradient(135deg,#667eea,#764ba2)' }}>{studentInitial}</div>
-      </div>
-    </div>
-  );
-
-  // ─── Loading ──────────────────────────────────────────────────────────────
-
-  if (loading) return (
-    <div style={{ display:'flex', minHeight:'100vh' }}>
-      <Sidebar active="results" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div style={{ display:'flex', justifyContent:'center', alignItems:'center', height:'100vh', flexDirection:'column', gap:16 }}>
-          <Spinner animation="border" style={{ width:60, height:60, color:'#667eea' }} />
-          <div style={{ fontSize:18, color:'#667eea', fontWeight:600 }}>Loading results...</div>
-        </div>
-      </div>
-    </div>
-  );
-
-  if (!result && !attemptId) return (
-    <div style={{ display:'flex', minHeight:'100vh' }}>
-      <Sidebar active="results" onLogout={handleLogout} />
-      <div className="dashboard-main" style={{ overflowY: 'auto', padding: 24 }}>
-        <Topbar title="My Results" />
-        
-        {allResults.length === 0 ? (
-          <div className="result-card" style={{ textAlign:'center', marginTop: 40, padding: 48 }}>
-            <div style={{ fontSize:64, marginBottom:16 }}>📊</div>
-            <h3>No Results Yet</h3>
-            <p style={{ color:'#888', marginBottom:24 }}>Complete an exam to view your results.</p>
-            <Button onClick={() => navigate('/exams')} style={{ borderRadius:10, fontWeight:600, padding:'12px 32px', background:'linear-gradient(135deg,#667eea,#764ba2)', border:'none' }}>Go to Exams</Button>
-          </div>
-        ) : (
-          <div className="result-card" style={{ marginTop: 24, padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '24px 32px', borderBottom: '1px solid #eee' }}>
-              <h4 style={{ margin: 0, color: '#2D0040', fontWeight: 700 }}>All Submissions ({allResults.length})</h4>
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead>
-                  <tr style={{ background: '#f8f9fa' }}>
-                    <th style={{ padding: '16px 32px', color: '#667eea', fontWeight: 600, borderBottom: '2px solid #eee' }}>Exam Title</th>
-                    <th style={{ padding: '16px 32px', color: '#667eea', fontWeight: 600, borderBottom: '2px solid #eee' }}>Score</th>
-                    <th style={{ padding: '16px 32px', color: '#667eea', fontWeight: 600, borderBottom: '2px solid #eee' }}>Percentage</th>
-                    <th style={{ padding: '16px 32px', color: '#667eea', fontWeight: 600, borderBottom: '2px solid #eee' }}>Time Taken</th>
-                    <th style={{ padding: '16px 32px', color: '#667eea', fontWeight: 600, borderBottom: '2px solid #eee' }}>Submitted Date</th>
-                    <th style={{ padding: '16px 32px', color: '#667eea', fontWeight: 600, borderBottom: '2px solid #eee', textAlign: 'center' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allResults.map((res, idx) => {
-                    const percentage = res.total_questions > 0 ? ((res.score / res.total_questions) * 100).toFixed(2) : 0;
-                    return (
-                      <tr key={idx} style={{ borderBottom: '1px solid #eee', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafafa'} onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
-                        <td style={{ padding: '16px 32px', fontWeight: 700, color: '#2D0040' }}>{res.exam_title || 'Untitled Exam'}</td>
-                        <td style={{ padding: '16px 32px', fontWeight: 600 }}>{res.score} / {res.total_questions}</td>
-                        <td style={{ padding: '16px 32px', fontWeight: 600, color: percentage >= 60 ? '#2e7d32' : '#c62828' }}>{percentage}%</td>
-                        <td style={{ padding: '16px 32px', color: '#555', fontWeight: 600 }}>{res.time_taken ? `${Math.floor(res.time_taken / 60)}m ${res.time_taken % 60}s` : 'N/A'}</td>
-                        <td style={{ padding: '16px 32px', color: '#888', fontSize: 14 }}>{new Date(res.submitted_at).toLocaleString('en-IN')}</td>
-                        <td style={{ padding: '16px 32px', textAlign: 'center' }}>
-                          <Button 
-                            size="sm" 
-                            onClick={() => navigate(`/result/${res.attempt_id || res.id}`)} 
-                            style={{ background: '#e8f5e9', color: '#2e7d32', border: 'none', fontWeight: 700, padding: '8px 20px', borderRadius: 20 }}
-                          >
-                            View Details
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+    <div className="topbar" style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', background:'#fff', borderBottom:'1px solid #e0e0e0', position:'sticky', top:0, zIndex:10 }}>
+      <h4 style={{ margin:0, fontWeight:700, color:'#1a1a2e' }}>{title}</h4>
+      <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+        {student && (
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <div style={{ width:32, height:32, borderRadius:'50%', background:'linear-gradient(135deg,#667eea,#764ba2)', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:14, fontWeight:700 }}>{studentInitial}</div>
+            <div style={{ textAlign:'right' }}>
+              <div style={{ fontSize:12, fontWeight:600, color:'#333' }}>{studentName}</div>
+              <div style={{ fontSize:10, color:'#888' }}>{studentEmail}</div>
             </div>
           </div>
         )}
+        <Button variant="outline-danger" size="sm" onClick={handleLogout} style={{ borderRadius:20, padding:'4px 16px', fontSize:12, fontWeight:600 }}>Logout</Button>
       </div>
     </div>
   );
+
+  if (loading) {
+    return (
+      <div style={{ display:'flex', minHeight:'100vh' }}>
+        <Sidebar active="results" onLogout={handleLogout} />
+        <div className="dashboard-main">
+          <div style={{ display:'flex', justifyContent:'center', alignItems:'center', height:'100vh', flexDirection:'column', gap:16 }}>
+            <Spinner animation="border" style={{ width:60, height:60, color:'#667eea' }} />
+            <div style={{ fontSize:18, color:'#667eea', fontWeight:600 }}>Loading results...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Show ALL results list (no attemptId) ─────────────────────────────────
+  if (!attemptId) {
+    return (
+      <div style={{ display:'flex', minHeight:'100vh' }}>
+        <Sidebar active="results" onLogout={handleLogout} />
+        <div className="dashboard-main">
+          <Topbar title="Results" />
+          <div style={{ padding: '24px 32px' }}>
+            {error && <Alert variant="danger" style={{ borderRadius:10, marginBottom:16 }}>{error}</Alert>}
+            {allResults.length === 0 ? (
+              <div style={{ textAlign:'center', padding:60 }}>
+                <div style={{ fontSize:64, marginBottom:16 }}>📊</div>
+                <h4>No Results Yet</h4>
+                <p style={{ color:'#888', marginBottom:24 }}>Complete an exam to see your results here.</p>
+                <Button onClick={() => navigate('/dashboard')} style={{ borderRadius:10, fontWeight:600, background:'linear-gradient(135deg,#667eea,#764ba2)', border:'none' }}>Back to Dashboard</Button>
+              </div>
+            ) : (
+              <div className="card" style={{ borderRadius:14, border:'none', boxShadow:'0 4px 16px rgba(0,0,0,0.06)', overflow:'hidden' }}>
+                <div style={{ overflowX:'auto' }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                    <thead>
+                      <tr style={{ background:'#f8f9fa', borderBottom:'2px solid #e0e0e0' }}>
+                        <th style={{ padding: '16px 32px', textAlign:'left', fontSize:12, fontWeight:700, color:'#555', textTransform:'uppercase', letterSpacing:1 }}>Exam</th>
+                        <th style={{ padding: '16px 32px', textAlign:'left', fontSize:12, fontWeight:700, color:'#555', textTransform:'uppercase', letterSpacing:1 }}>Score</th>
+                        <th style={{ padding: '16px 32px', textAlign:'left', fontSize:12, fontWeight:700, color:'#555', textTransform:'uppercase', letterSpacing:1 }}>Percentage</th>
+                        <th style={{ padding: '16px 32px', textAlign:'left', fontSize:12, fontWeight:700, color:'#555', textTransform:'uppercase', letterSpacing:1 }}>Time Taken</th>
+                        <th style={{ padding: '16px 32px', textAlign:'left', fontSize:12, fontWeight:700, color:'#555', textTransform:'uppercase', letterSpacing:1 }}>Submitted</th>
+                        <th style={{ padding: '16px 32px', textAlign:'center', fontSize:12, fontWeight:700, color:'#555', textTransform:'uppercase', letterSpacing:1 }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allResults.map((res, idx) => {
+                        const percentage = res.total_questions > 0 ? ((res.score / res.total_questions) * 100).toFixed(2) : 0;
+                        return (
+                          <tr key={idx} style={{ borderBottom: '1px solid #eee', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafafa'} onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                            <td style={{ padding: '16px 32px', fontWeight: 700, color: '#2D0040' }}>{res.exam_title || 'Untitled Exam'}</td>
+                            <td style={{ padding: '16px 32px', fontWeight: 600 }}>{res.score} / {res.total_questions}</td>
+                            <td style={{ padding: '16px 32px', fontWeight: 600, color: percentage >= 60 ? '#2e7d32' : '#c62828' }}>{percentage}%</td>
+                            <td style={{ padding: '16px 32px', color: '#555', fontWeight: 600 }}>{res.time_taken ? `${Math.floor(res.time_taken / 60)}m ${res.time_taken % 60}s` : 'N/A'}</td>
+                            <td style={{ padding: '16px 32px', color: '#888', fontSize: 14 }}>{new Date(res.submitted_at).toLocaleString('en-IN')}</td>
+                            <td style={{ padding: '16px 32px', textAlign: 'center' }}>
+                              <Button 
+                                size="sm" 
+                                onClick={() => navigate(`/result/${res.attempt_id || res.id}`)} 
+                                style={{ background: '#e8f5e9', color: '#2e7d32', border: 'none', fontWeight: 700, padding: '8px 20px', borderRadius: 20 }}
+                              >
+                                View Details
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (error) return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
@@ -354,15 +389,20 @@ const ResultPage = () => {
   
   let calculatedAttempted = 0;
   if (result?.answers && Array.isArray(result.answers)) {
-    calculatedAttempted = result.answers.filter(a => a.student_answer != null && a.student_answer !== '').length;
+    // 🔧 FIX: Also check for null/undefined/empty string values from backend
+    calculatedAttempted = result.answers.filter(a => {
+      const ans = a.student_answer;
+      return ans != null && ans !== '' && ans !== 'null' && ans !== 'undefined';
+    }).length;
   }
   
-  const attempted = result?.attempted ?? calculatedAttempted;
-  const unanswered = result?.unanswered ?? (total - attempted);
+  // 🔧 FIX: Give priority to the REAL calculated value over backend's attempted field
+  const attempted = calculatedAttempted > 0 ? calculatedAttempted : (result?.attempted ?? 0);
+  const unanswered = total - attempted;
   const completion = total > 0 ? Math.round((attempted / total) * 100) : 0;
   const score = result?.score ?? 0;
 
-  const submittedDate = new Date(result.submitted_at);
+  const submittedDate = result.submitted_at ? new Date(result.submitted_at) : new Date();
   const dateFormatted = submittedDate.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
   const timeFormatted = submittedDate.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12:true });
   
