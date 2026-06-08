@@ -80,11 +80,11 @@ const ExamDashboard = () => {
   const [audioViolationCount, setAudioViolationCount] = useState(0);
   const [multipleFaceCount, setMultipleFaceCount] = useState(0);
   const [warningType, setWarningType] = useState('Tab Switch');
-  const MAX_MOBILE_WARNINGS = 3;
-  const MAX_MISSING_FACE_WARNINGS = 3;
-  const MAX_AUDIO_WARNINGS = 3;
-  const MAX_MULTIPLE_FACE_WARNINGS = 3;
-  const MAX_TAB_SWITCHES = 3;
+  const MAX_MOBILE_WARNINGS = 5;
+  const MAX_MISSING_FACE_WARNINGS = 5;
+  const MAX_AUDIO_WARNINGS = 5;
+  const MAX_MULTIPLE_FACE_WARNINGS = 5;
+  const MAX_TAB_SWITCHES = 5;
 
   const violationCountsRef = useRef({
     'Mobile Phone Detection': 0,
@@ -268,8 +268,8 @@ const ExamDashboard = () => {
     const now = Date.now();
     const lastTime = lastViolationTimesRef.current[violation.type] || 0;
     
-    // 5000ms debounce per violation type
-    if (now - lastTime < 5000) return;
+    // 15-second debounce per violation type (prevents rapid-fire false warnings)
+    if (now - lastTime < 15000) return;
     
     lastViolationTimesRef.current[violation.type] = now;
     const newViolation = { ...violation, timestamp: now };
