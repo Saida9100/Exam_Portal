@@ -107,6 +107,10 @@ class ApiService {
 
 
 
+  async verifyToken() {
+    return this.request('/api/verify-token');
+  }
+
   logout() {
     localStorage.removeItem('jwt_token');
     localStorage.removeItem('user');
