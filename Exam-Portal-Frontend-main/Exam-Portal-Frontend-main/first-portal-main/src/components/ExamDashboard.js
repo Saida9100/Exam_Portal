@@ -98,6 +98,8 @@ const ExamDashboard = () => {
 
 
 
+  const [serverTimeRemaining, setServerTimeRemaining] = useState(null);
+
   // ✅ FIXED: Fetch exam data correctly
   useEffect(() => {
     fetchExamData();
@@ -114,6 +116,18 @@ const ExamDashboard = () => {
     const examData = await apiService.getExamQuestions(examId);
     
     if (!examData || !examData.exam) {
+      throw new Error('Invalid exam data received');
+    }
+
+    // NEW: Fetch Server Time to prevent infinite timer cheat
+    try {
+      const timerData = await apiService.checkTimer(examId);
+      if (timerData && timerData.remaining_seconds !== undefined) {
+        setServerTimeRemaining(timerData.remaining_seconds);
+      }
+    } catch (timerErr) {
+      console.warn("Failed to fetch server timer, falling back to full duration.");
+    }
       setError('Exam not found');
       setLoading(false);
       return;
@@ -482,7 +496,10 @@ const ExamDashboard = () => {
         <div className="timer-box">
           <div className="timer-label">TIME REMAINING</div>
           {(!submitted && !examTerminated && exam && !loading) ? (
-            <TimerDisplay initialTimeLeft={exam.duration * 60} onTimeUp={handleAutoSubmit} />
+            <TimerDisplay 
+              initialTimeLeft={serverTimeRemaining !== null ? serverTimeRemaining : exam.duration * 60} 
+              onTimeUp={handleAutoSubmit} 
+            />
           ) : (
             <div className="timer-value">{formatTime(exam?.duration ? exam.duration * 60 : 0)}</div>
           )}
