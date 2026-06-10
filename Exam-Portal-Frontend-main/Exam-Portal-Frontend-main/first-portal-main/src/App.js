@@ -30,11 +30,47 @@ function App() {
     if (token && user) {
       const userData = JSON.parse(user);
       console.log('✅ User authenticated - Role:', userData?.role);
+      
+      // ---------------------------------------------------------
+      // INACTIVITY TRACKER: Expire session after 20 mins of no use
+      // ---------------------------------------------------------
+      let idleTimer;
+      const IDLE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes in milliseconds
+
+      const handleIdleLogout = () => {
+        console.warn('User inactive for 20 minutes. Session expired.');
+        localStorage.removeItem('jwt_token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      };
+
+      const resetIdleTimer = () => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(handleIdleLogout, IDLE_TIMEOUT_MS);
+      };
+
+      // Events that prove the user is actively using the app
+      const activeEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+      
+      // Attach listeners to window
+      activeEvents.forEach(event => window.addEventListener(event, resetIdleTimer));
+
+      // Start the timer for the first time
+      resetIdleTimer();
+
+      // Ensure setAuthChecked runs immediately for initial render
+      setAuthChecked(true);
+
+      // Cleanup function to remove listeners when app unmounts
+      return () => {
+        clearTimeout(idleTimer);
+        activeEvents.forEach(event => window.removeEventListener(event, resetIdleTimer));
+      };
+      // ---------------------------------------------------------
     } else {
       console.log('❌ No user authenticated');
+      setAuthChecked(true);
     }
-    
-    setAuthChecked(true);
   }, []);
 
   if (!authChecked) {
