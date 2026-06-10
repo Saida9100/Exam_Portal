@@ -620,7 +620,8 @@ const ExamDashboard = () => {
     if (!pdfSrc.startsWith('blob:') && !pdfSrc.startsWith('http://') && !pdfSrc.startsWith('https://') && !pdfSrc.startsWith('data:')) {
       // Relative path — prepend BACKEND URL (not frontend URL)
       if (!pdfSrc.startsWith('/')) pdfSrc = '/' + pdfSrc;
-      pdfSrc = `https://exam-backend-eg8c.onrender.com${pdfSrc}`;
+      const apiBaseUrl = process.env.REACT_APP_API_URL || 'https://exam-backend-eg8c.onrender.com';
+      pdfSrc = `${apiBaseUrl}${pdfSrc}`;
     }
 
     return (
