@@ -128,10 +128,6 @@ const ExamDashboard = () => {
     } catch (timerErr) {
       console.warn("Failed to fetch server timer, falling back to full duration.");
     }
-      setError('Exam not found');
-      setLoading(false);
-      return;
-    }
 
     console.log('✅ Got exam:', examData.exam);
     
