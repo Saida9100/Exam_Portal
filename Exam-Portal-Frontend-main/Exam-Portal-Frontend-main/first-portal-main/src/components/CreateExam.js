@@ -245,7 +245,7 @@ const CreateExam = () => {
       <SharedAdminSidebar active="create" />
 
       {/* Main Content */}
-      <div style={{ flex: 1, overflowX: 'hidden' }}>
+      <div className="dashboard-main" style={{ flex: 1, overflowX: 'hidden' }}>
         {/* Header */}
         <div style={{
           background: '#fff', padding: '18px 32px',
