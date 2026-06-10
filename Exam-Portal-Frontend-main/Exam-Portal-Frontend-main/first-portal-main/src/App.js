@@ -12,6 +12,7 @@ import { AdminDashboard, ManageExams, ViewResults, AdminSettings, ManageAdmins }
 import SuperAdminDashboard from './components/SuperAdminDashboard';
 import DetectedStudents from './components/DetectedStudents';
 import ProtectedRoute from './components/ProtectedRoute';
+import apiService from './services/api';
 
 import './App.css';
 
@@ -19,58 +20,60 @@ function App() {
   const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
-    // ✅ Check if user is authenticated by looking at localStorage directly
-    const token = localStorage.getItem('jwt_token');
-    const user = localStorage.getItem('user');
-    
-    console.log('🔍 App.js - Authentication Check:');
-    console.log('  - Token in localStorage:', !!token);
-    console.log('  - User in localStorage:', !!user);
-    
-    if (token && user) {
-      const userData = JSON.parse(user);
-      console.log('✅ User authenticated - Role:', userData?.role);
+    const verifyAuth = async () => {
+      const token = localStorage.getItem('jwt_token');
+      const user = localStorage.getItem('user');
       
-      // ---------------------------------------------------------
-      // INACTIVITY TRACKER: Expire session after 20 mins of no use
-      // ---------------------------------------------------------
-      let idleTimer;
-      const IDLE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes in milliseconds
-
-      const handleIdleLogout = () => {
-        console.warn('User inactive for 20 minutes. Session expired.');
-        localStorage.removeItem('jwt_token');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
-      };
-
-      const resetIdleTimer = () => {
-        clearTimeout(idleTimer);
-        idleTimer = setTimeout(handleIdleLogout, IDLE_TIMEOUT_MS);
-      };
-
-      // Events that prove the user is actively using the app
-      const activeEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+      console.log('🔍 App.js - Authentication Check:');
       
-      // Attach listeners to window
-      activeEvents.forEach(event => window.addEventListener(event, resetIdleTimer));
-
-      // Start the timer for the first time
-      resetIdleTimer();
-
-      // Ensure setAuthChecked runs immediately for initial render
+      if (token && user) {
+        try {
+          // SECURE SPOOF CHECK: Validate token cryptographically with backend
+          const response = await apiService.verifyToken();
+          
+          if (response.success && response.user) {
+            console.log('✅ Token Verified cryptographically! Role:', response.user.role);
+            // Overwrite localStorage with real backend truth (destroys manual spoofing)
+            localStorage.setItem('user', JSON.stringify(response.user));
+            
+            // ---------------------------------------------------------
+            // INACTIVITY TRACKER: Expire session after 20 mins of no use
+            // ---------------------------------------------------------
+            let idleTimer;
+            const IDLE_TIMEOUT_MS = 20 * 60 * 1000; 
+            const handleIdleLogout = () => {
+              console.warn('User inactive for 20 minutes. Session expired.');
+              localStorage.removeItem('jwt_token');
+              localStorage.removeItem('user');
+              window.location.href = '/login';
+            };
+            const resetIdleTimer = () => {
+              clearTimeout(idleTimer);
+              idleTimer = setTimeout(handleIdleLogout, IDLE_TIMEOUT_MS);
+            };
+            const activeEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+            activeEvents.forEach(event => window.addEventListener(event, resetIdleTimer));
+            resetIdleTimer();
+            // ---------------------------------------------------------
+            
+            setAuthChecked(true);
+            return () => {
+              clearTimeout(idleTimer);
+              activeEvents.forEach(event => window.removeEventListener(event, resetIdleTimer));
+            };
+          }
+        } catch (error) {
+          console.error('❌ Spoofed or Expired Token Detected! Logging out...');
+          localStorage.removeItem('jwt_token');
+          localStorage.removeItem('user');
+        }
+      } else {
+        console.log('❌ No user authenticated');
+      }
       setAuthChecked(true);
+    };
 
-      // Cleanup function to remove listeners when app unmounts
-      return () => {
-        clearTimeout(idleTimer);
-        activeEvents.forEach(event => window.removeEventListener(event, resetIdleTimer));
-      };
-      // ---------------------------------------------------------
-    } else {
-      console.log('❌ No user authenticated');
-      setAuthChecked(true);
-    }
+    verifyAuth();
   }, []);
 
   if (!authChecked) {
