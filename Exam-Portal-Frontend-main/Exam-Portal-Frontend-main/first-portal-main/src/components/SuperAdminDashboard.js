@@ -245,4 +245,4 @@ const SuperAdminDashboard = () => {
   );
 };
 
-export default SuperAdminDashboard;
+export default SuperAdminDashboard; 
