@@ -7,7 +7,7 @@ import SharedAdminSidebar from './SharedAdminSidebar';
 const ANSWER_OPTIONS = ['A', 'B', 'C', 'D'];
 
 const CreateExam = () => {
-  
+
   const navigate = useNavigate();
   const user = apiService.getUser();
 
@@ -36,6 +36,21 @@ const CreateExam = () => {
   const [createdExamCode, setCreatedExamCode] = useState('');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdExamTitle, setCreatedExamTitle] = useState('');
+
+  // Admin assignment (for super admin)
+  const [adminsList, setAdminsList] = useState([]);
+  const [selectedAdminId, setSelectedAdminId] = useState('');
+
+  useEffect(() => {
+    if (user?.role === 'super_admin') {
+      apiService.getAdmins()
+        .then(res => {
+          const allAdmins = res.admins || res.data || [];
+          setAdminsList(allAdmins.filter(a => a.role === 'admin'));
+        })
+        .catch(console.error);
+    }
+  }, [user?.role]);
 
   const handleLogout = () => {
     apiService.logout();
@@ -105,6 +120,10 @@ const CreateExam = () => {
       setError(`Please set answers for all ${totalQ} questions in the Answer Key section.`);
       return;
     }
+    if (user?.role === 'super_admin' && !selectedAdminId) {
+      setError('Please assign this exam to an admin');
+      return;
+    }
 
     setLoading(true);
 
@@ -117,6 +136,10 @@ const CreateExam = () => {
       formData.append('deadline', showDeadline ? deadline : '');
       formData.append('pdf_file', pdfFile, pdfFile.name);
       formData.append('answer_key', JSON.stringify(answerKey));
+
+      if (user?.role === 'super_admin') {
+        formData.append('admin_id', selectedAdminId);
+      }
 
       const data = await apiService.request('/api/exams/create-with-pdf', {
         method: 'POST',
@@ -367,6 +390,26 @@ const CreateExam = () => {
                   )}
                   <small style={{ color: '#aaa', fontSize: 12, marginTop: 5, display: 'block' }}>Leave empty for no deadline</small>
                 </div>
+
+                {/* Admin assignment for super admin */}
+                {user?.role === 'super_admin' && (
+                  <div style={{ marginTop: 18 }}>
+                    <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13, color: '#555' }}>
+                      ASSIGN TO ADMIN <span style={{ color: '#f44336' }}>*</span>
+                    </label>
+                    <select
+                      value={selectedAdminId}
+                      onChange={(e) => setSelectedAdminId(e.target.value)}
+                      disabled={loading}
+                      style={{ width: '100%', padding: '11px 14px', fontSize: 14, border: '2px solid #e0e0e0', borderRadius: 10, outline: 'none', background: '#fff', boxSizing: 'border-box' }}
+                    >
+                      <option value="">-- Select an Admin --</option>
+                      {adminsList.map(a => (
+                        <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               {/* Card: PDF Upload */}
