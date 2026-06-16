@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiService from '../services/api';
 import SharedAdminSidebar from './SharedAdminSidebar';
+import ExportToolbar from './ExportToolbar';
+import { prepareStudentsForExport, getExportFilename } from '../utils/exportUtils';
 
 /* ─── helpers ─── */
 // ✅ PRODUCTION-READY PASSWORD GENERATOR
@@ -444,25 +446,25 @@ const handleBulkCreate = async () => {
           {/* ─── TAB: LIST ─── */}
           {tab === 'list' && (
             <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
-              <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0f0f5', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
-                <div style={{ width: '100%', maxWidth: 500 }}>
-                  <input
-                    placeholder="🔍  Search by name or email..."
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    style={{ ...inputStyle, width: '100%', marginBottom: 0 }}
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0f0f5', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                  <div style={{ width: '100%', maxWidth: 500 }}>
+                    <input
+                      placeholder="🔍  Search by name or email..."
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      style={{ ...inputStyle, width: '100%', marginBottom: 0 }}
+                    />
+                  </div>
+                  <ExportToolbar
+                    data={prepareStudentsForExport(filtered)}
+                    filename={getExportFilename(admin?.role, 'students')}
+                    title="Student Accounts Report"
+                    dateField="created_at"
+                    showDateFilter={true}
+                    showSearchFilter={false}
                   />
                 </div>
-                <button
-                  onClick={() => {
-                    if (!students.length) return;
-                    downloadCSV(students.map(s => ({ name: s.name, email: s.email, created: s.created_at })), 'students.csv');
-                  }}
-                  style={{
-                    padding: '10px 20px', background: 'linear-gradient(135deg,#5B0A7B,#2D0040)',
-                    color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: 13
-                  }}
-                >⬇️ Export CSV</button>
               </div>
 
               {loading ? (
