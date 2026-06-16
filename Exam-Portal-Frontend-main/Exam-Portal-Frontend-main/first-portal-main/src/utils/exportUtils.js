@@ -10,22 +10,18 @@ export const exportToCSV = (data, filename = 'export') => {
     return;
   }
 
-  // Extract headers from first object
   const headers = Object.keys(data[0]);
   
-  // Create CSV content
   const csvContent = [
     headers.map(h => `"${h}"`).join(','),
     ...data.map(row => 
       headers.map(h => {
         const value = row[h] !== null && row[h] !== undefined ? row[h] : '';
-        // Escape quotes and wrap in quotes
         return `"${String(value).replace(/"/g, '""')}"`;
       }).join(',')
     )
   ].join('\n');
 
-  // Create and download file
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -45,13 +41,9 @@ export const exportToExcel = async (data, filename = 'export', sheetName = 'Shee
   }
 
   try {
-    // Dynamic import to avoid bundling issues
     const XLSX = await import('xlsx');
-    
-    // Create worksheet
     const ws = XLSX.utils.json_to_sheet(data);
     
-    // Auto-size columns
     const colWidths = Object.keys(data[0]).map(key => {
       const headerLen = key.length;
       const maxDataLen = Math.max(...data.map(row => 
@@ -61,7 +53,6 @@ export const exportToExcel = async (data, filename = 'export', sheetName = 'Shee
     });
     ws['!cols'] = colWidths;
     
-    // Create workbook and download
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
     XLSX.writeFile(wb, `${filename}_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -80,29 +71,22 @@ export const exportToPDF = async (data, filename = 'export', title = 'Report', h
   }
 
   try {
-    // Dynamic imports
     const { jsPDF } = await import('jspdf');
     await import('jspdf-autotable');
     
     const doc = new jsPDF('landscape');
-    
-    // Get headers from data if not provided
     const cols = headers || Object.keys(data[0]);
     
-    // Get rows
     const rows = data.map(row => cols.map(col => 
       row[col] !== null && row[col] !== undefined ? String(row[col]) : ''
     ));
     
-    // Add title
     doc.setFontSize(18);
     doc.text(title, 14, 20);
     
-    // Add date
     doc.setFontSize(10);
     doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, 14, 28);
     
-    // Add table
     doc.autoTable({
       head: [cols],
       body: rows,
@@ -117,7 +101,6 @@ export const exportToPDF = async (data, filename = 'export', title = 'Report', h
       margin: { top: 35 }
     });
     
-    // Save PDF
     doc.save(`${filename}_${new Date().toISOString().slice(0, 10)}.pdf`);
     
   } catch (error) {
@@ -127,7 +110,7 @@ export const exportToPDF = async (data, filename = 'export', title = 'Report', h
 };
 
 // ==================== Filter Data by Date Range ====================
-export const filterByDateRange = (data, startDate, endDate, dateField = 'created_at') => {
+export const filterByDateRange = (data, startDate, endDate, dateField = '_sortDate') => {
   if (!data || data.length === 0) return data;
   
   let filtered = [...data];
@@ -136,8 +119,16 @@ export const filterByDateRange = (data, startDate, endDate, dateField = 'created
     const start = new Date(startDate);
     start.setHours(0, 0, 0, 0);
     filtered = filtered.filter(item => {
-      const itemDate = new Date(item[dateField]);
-      return itemDate >= start;
+      let itemDate;
+      // Try hidden sort field first
+      if (item._sortDate) {
+        itemDate = new Date(item._sortDate);
+      } else if (item[dateField]) {
+        itemDate = new Date(item[dateField]);
+      } else {
+        return true; // Keep if no date field found
+      }
+      return !isNaN(itemDate.getTime()) && itemDate >= start;
     });
   }
   
@@ -145,8 +136,15 @@ export const filterByDateRange = (data, startDate, endDate, dateField = 'created
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
     filtered = filtered.filter(item => {
-      const itemDate = new Date(item[dateField]);
-      return itemDate <= end;
+      let itemDate;
+      if (item._sortDate) {
+        itemDate = new Date(item._sortDate);
+      } else if (item[dateField]) {
+        itemDate = new Date(item[dateField]);
+      } else {
+        return true;
+      }
+      return !isNaN(itemDate.getTime()) && itemDate <= end;
     });
   }
   
@@ -178,7 +176,8 @@ export const prepareStudentResultsForExport = (results) => {
       'Status': status,
       'Time Taken': timeTaken,
       'Submitted On': new Date(result.submitted_at).toLocaleString('en-IN'),
-      'Attempt ID': result.attempt_id || result.id
+      'Attempt ID': result.attempt_id || result.id,
+      _sortDate: result.submitted_at
     };
   });
 };
@@ -191,7 +190,8 @@ export const prepareStudentsForExport = (students) => {
     'Joined': student.created_at 
       ? new Date(student.created_at).toLocaleDateString('en-IN') 
       : '—',
-    'Student ID': student.id || '—'
+    'Student ID': student.id || '—',
+    _sortDate: student.created_at
   }));
 };
 
@@ -210,7 +210,8 @@ export const prepareExamsForExport = (exams) => {
       'Exam Code': exam.exam_code || '—',
       'Created': exam.created_at 
         ? new Date(exam.created_at).toLocaleDateString('en-IN') 
-        : '—'
+        : '—',
+      _sortDate: exam.created_at
     };
   });
 };
@@ -237,7 +238,8 @@ export const prepareResultsForExport = (results) => {
       'Violations': result.violations ? result.violations.length : 0,
       'Submitted': result.submitted_at 
         ? new Date(result.submitted_at).toLocaleString('en-IN') 
-        : '—'
+        : '—',
+      _sortDate: result.submitted_at
     };
   });
 };
@@ -256,7 +258,8 @@ export const prepareViolationsForExport = (results) => {
           'Violation Type': violation.type || '—',
           'Timestamp': new Date(violation.timestamp).toLocaleString('en-IN'),
           'Score': `${result.score} / ${result.total_questions}`,
-          'Attempt ID': result.attempt_id || result.id
+          'Attempt ID': result.attempt_id || result.id,
+          _sortDate: violation.timestamp
         });
       });
     }
@@ -274,6 +277,7 @@ export const prepareAdminsForExport = (admins) => {
     'Joined': admin.created_at 
       ? new Date(admin.created_at).toLocaleDateString('en-IN') 
       : '—',
-    'Admin ID': admin.id || '—'
+    'Admin ID': admin.id || '—',
+    _sortDate: admin.created_at
   }));
 };
