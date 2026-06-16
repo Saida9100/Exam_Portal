@@ -5,6 +5,8 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Spinner, Alert } from 'react-bootstrap';
 import Sidebar from './Sidebar';
 import apiService from '../services/api';
+import ExportToolbar from './ExportToolbar';
+import { prepareStudentResultsForExport, getExportFilename } from '../utils/exportUtils';
 
 const ResultPage = () => {
   const { attemptId } = useParams();
@@ -310,6 +312,19 @@ const ResultPage = () => {
               </div>
             ) : (
               <div className="card" style={{ borderRadius:14, border:'none', boxShadow:'0 4px 16px rgba(0,0,0,0.06)', overflow:'hidden' }}>
+                <div style={{ padding: '20px 24px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                  <h5 style={{ margin: 0, fontWeight: 700, color: '#1a1a2e', fontSize: 16 }}>
+                    📊 All Exam Results ({allResults.length})
+                  </h5>
+                  <ExportToolbar
+                    data={prepareStudentResultsForExport(allResults)}
+                    filename={getExportFilename('student', 'results')}
+                    title="My Exam Results Report"
+                    dateField="submitted_at"
+                    showDateFilter={true}
+                    showSearchFilter={false}
+                  />
+                </div>
                 <div style={{ overflowX:'auto' }}>
                   <table style={{ width:'100%', borderCollapse:'collapse' }}>
                     <thead>
