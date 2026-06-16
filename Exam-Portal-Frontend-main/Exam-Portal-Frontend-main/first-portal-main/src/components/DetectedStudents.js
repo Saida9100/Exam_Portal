@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { Card, Button, Badge } from 'react-bootstrap';
 import apiService from '../services/api';
 import SharedAdminSidebar from './SharedAdminSidebar';
+import ExportToolbar from './ExportToolbar';
+import { prepareViolationsForExport, getExportFilename } from '../utils/exportUtils';
 
 const DetectedStudents = () => {
   const [results, setResults] = useState([]);
@@ -168,11 +170,21 @@ const DetectedStudents = () => {
               />
             </div>
           </div>
-          {results.length > 0 && admin?.role === 'super_admin' && (
-            <Button variant="danger" onClick={handleClearData} style={{ borderRadius: 8, padding: '8px 16px', fontWeight: 600 }}>
-              🗑️ Clear All Data
-            </Button>
-          )}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {results.length > 0 && (
+              <ExportToolbar
+                data={prepareViolationsForExport(filteredResults)}
+                filename={getExportFilename(admin?.role, 'violations')}
+                title="Proctoring Violations Report"
+                dateField="submitted_at"
+              />
+            )}
+            {results.length > 0 && admin?.role === 'super_admin' && (
+              <Button variant="danger" onClick={handleClearData} style={{ borderRadius: 8, padding: '8px 16px', fontWeight: 600 }}>
+                🗑️ Clear All Data
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Info banner for regular admins */}
