@@ -143,7 +143,10 @@ const StudentManagement = () => {
     fetchDeletionRequests();
     if (admin?.role === 'super_admin') {
       apiService.getAdmins()
-        .then(res => setAdminsList(res.admins || res.data || []))
+        .then(res => {
+          const allAdmins = res.admins || res.data || [];
+          setAdminsList(allAdmins.filter(a => a.role === 'admin'));
+        })
         .catch(console.error);
     }
   }, []);
