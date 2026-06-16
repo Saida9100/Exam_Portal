@@ -296,6 +296,20 @@ const CreateExam = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const [adminsList, setAdminsList] = useState([]);
+  const [selectedAdminId, setSelectedAdminId] = useState('');
+
+  useEffect(() => {
+    if (admin?.role === 'super_admin') {
+      apiService.getAdmins()
+        .then(res => {
+          const allAdmins = res.admins || res.data || [];
+          setAdminsList(allAdmins.filter(a => a.role === 'admin'));
+        })
+        .catch(console.error);
+    }
+  }, [admin?.role]);
+
   const handleLogout = () => {
     apiService.logout();
   };
@@ -335,6 +349,11 @@ const CreateExam = () => {
       return;
     }
 
+    if (admin?.role === 'super_admin' && !selectedAdminId) {
+      setError('Please assign this exam to an admin');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -346,7 +365,11 @@ const CreateExam = () => {
         deadline: deadline || null,
       };
 
-      // Call API to create exam (you'll need to implement this endpoint)
+      if (admin?.role === 'super_admin') {
+        examData.admin_id = selectedAdminId;
+      }
+
+      // Call API to create exam
       const response = await apiService.createExamDbMode(examData);
 
       setSuccess(true);
@@ -537,6 +560,26 @@ const CreateExam = () => {
                       Leave empty for no deadline
                     </Form.Text>
                   </Form.Group>
+
+                  {admin?.role === 'super_admin' && (
+                    <Form.Group className="mb-3">
+                      <Form.Label className="form-label-custom">
+                        Assign to Admin <span style={{ color: '#dc3545' }}>*</span>
+                      </Form.Label>
+                      <Form.Control
+                        as="select"
+                        className="form-input-custom"
+                        value={selectedAdminId}
+                        onChange={(e) => setSelectedAdminId(e.target.value)}
+                        disabled={loading}
+                      >
+                        <option value="">-- Select an Admin --</option>
+                        {adminsList.map(a => (
+                          <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
+                        ))}
+                      </Form.Control>
+                    </Form.Group>
+                  )}
                 </div>
               </Col>
 
