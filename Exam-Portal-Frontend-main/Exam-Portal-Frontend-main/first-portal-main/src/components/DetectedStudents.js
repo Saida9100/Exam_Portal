@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button, Badge } from 'react-bootstrap';
-import apiService from '../services/api';
+import apiService from '../services/api'; 
 import SharedAdminSidebar from './SharedAdminSidebar';
 import ExportToolbar from './ExportToolbar';
 import { prepareViolationsForExport, getExportFilename } from '../utils/exportUtils';
