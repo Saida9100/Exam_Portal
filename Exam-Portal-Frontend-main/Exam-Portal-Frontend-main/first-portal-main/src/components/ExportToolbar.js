@@ -3,7 +3,7 @@
  * ExportToolbar - Reusable component for data export with filters
  * Provides CSV, Excel, PDF download buttons with date range filtering
  */
-import React, { useState } from 'react'; 
+import React, { useState } from 'react';
 import { exportToCSV, exportToExcel, exportToPDF, filterByDateRange } from '../utils/exportUtils';
 
 const ExportToolbar = ({
@@ -25,18 +25,20 @@ const ExportToolbar = ({
   const handleExport = async (format) => {
     let filteredData = data;
 
-    // Apply date range filter
+    // Apply date range filter using hidden _sortDate field
     if (startDate || endDate) {
-      filteredData = filterByDateRange(filteredData, startDate, endDate, dateField);
+      filteredData = filterByDateRange(filteredData, startDate, endDate, '_sortDate');
     }
 
     // Apply search filter if applicable
     if (searchTerm && showSearchFilter) {
       const search = searchTerm.toLowerCase();
       filteredData = filteredData.filter(item =>
-        Object.values(item).some(val =>
-          String(val).toLowerCase().includes(search)
-        )
+        Object.entries(item)
+          .filter(([key]) => key !== '_sortDate')
+          .some(([, val]) =>
+            String(val).toLowerCase().includes(search)
+          )
       );
     }
 
