@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { Row, Col, Form, Button, Alert, Modal, Table } from 'react-bootstrap';
 import apiService from '../services/api';
 import SharedAdminSidebar from './SharedAdminSidebar';
+import ExportToolbar from './ExportToolbar';
+import { prepareStudentsForExport, prepareExamsForExport, prepareResultsForExport, prepareAdminsForExport, getExportFilename } from '../utils/exportUtils';
 
 // Password generator (same logic as StudentManagement)
 const generatePassword = (name) => {
@@ -813,7 +815,13 @@ const ManageExams = () => {
                   />
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <ExportToolbar
+                  data={prepareExamsForExport(filteredExams)}
+                  filename={getExportFilename(admin?.role, 'exams')}
+                  title="Exams Report"
+                  dateField="created_at"
+                />
                 {admin?.role === 'super_admin' && (
                   <Button
                     onClick={handleClearData}
@@ -1090,20 +1098,28 @@ const ViewResults = () => {
                   />
                 </div>
               </div>
-              {admin?.role === 'super_admin' && (
-                <Button
-                  onClick={handleClearData}
-                  variant="outline-danger"
-                  style={{
-                    borderRadius: 8,
-                    padding: '8px 20px',
-                    fontWeight: 600,
-                    fontSize: 13,
-                  }}
-                >
-                  Clear Data
-                </Button>
-              )}
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <ExportToolbar
+                  data={prepareResultsForExport(filteredResults)}
+                  filename={getExportFilename(admin?.role, 'results')}
+                  title="Student Results Report"
+                  dateField="submitted_at"
+                />
+                {admin?.role === 'super_admin' && (
+                  <Button
+                    onClick={handleClearData}
+                    variant="outline-danger"
+                    style={{
+                      borderRadius: 8,
+                      padding: '8px 20px',
+                      fontWeight: 600,
+                      fontSize: 13,
+                    }}
+                  >
+                    Clear Data
+                  </Button>
+                )}
+              </div>
             </div>
             <Table responsive hover>
               <thead>
@@ -1547,7 +1563,7 @@ const ManageAdmins = () => {
 
         {tab === 'list' && (
           <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0f0f5', display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0f0f5', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
               <div style={{ width: '100%', maxWidth: 500 }}>
                 <input
                   placeholder="🔍  Search admins by name or email..."
@@ -1556,6 +1572,12 @@ const ManageAdmins = () => {
                   style={{ padding: '10px 16px', borderRadius: 8, border: '2px solid #f0f0f5', fontSize: 14, width: '100%', outline: 'none' }}
                 />
               </div>
+              <ExportToolbar
+                data={prepareAdminsForExport(filteredAdmins)}
+                filename={getExportFilename('super_admin', 'admins')}
+                title="Admins Report"
+                dateField="created_at"
+              />
             </div>
             {loading ? (
               <div style={{ padding: 60, textAlign: 'center', color: '#888' }}>Loading admins…</div>
