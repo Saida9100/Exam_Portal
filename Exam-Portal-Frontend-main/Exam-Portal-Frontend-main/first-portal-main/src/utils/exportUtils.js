@@ -182,6 +182,27 @@ export const prepareStudentResultsForExport = (results) => {
   });
 };
 
+// ==================== Parse Exam Start Time ====================
+export const parseExamStartTime = (exam) => {
+  if (!exam) return null;
+  if (exam.start_time) return new Date(exam.start_time);
+  if (exam.scheduled_at) return new Date(exam.scheduled_at);
+  if (exam.description) {
+    const match = String(exam.description).match(/\[ScheduledStart:\s*([^\]]+)\]/);
+    if (match && match[1]) {
+      const parsed = new Date(match[1]);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+  }
+  return null;
+};
+
+// ==================== Clean Exam Description ====================
+export const cleanExamDescription = (description) => {
+  if (!description) return '';
+  return String(description).replace(/\[ScheduledStart:\s*[^\]]+\]/g, '').trim();
+};
+
 // ==================== Prepare Students Data for Export ====================
 export const prepareStudentsForExport = (students) => {
   return students.map(student => ({
@@ -198,15 +219,25 @@ export const prepareStudentsForExport = (students) => {
 // ==================== Prepare Exams Data for Export ====================
 export const prepareExamsForExport = (exams) => {
   return exams.map(exam => {
-    const isActive = !exam.deadline || new Date(exam.deadline) > new Date();
+    const startTime = parseExamStartTime(exam);
+    const isUpcoming = startTime && startTime > new Date();
+    const isActive = !isUpcoming && (!exam.deadline || new Date(exam.deadline) > new Date());
+    const status = isUpcoming ? 'Upcoming' : (isActive ? 'Active' : 'Expired');
+
+    const formattedStart = startTime 
+      ? startTime.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : 'Immediately';
+
     return {
       'Exam Title': exam.title || '—',
+      'Description': cleanExamDescription(exam.description) || '—',
       'Questions': exam.total_questions || '—',
       'Duration': exam.duration ? `${exam.duration} min` : '—',
+      'Start Time': formattedStart,
       'Deadline': exam.deadline 
-        ? new Date(exam.deadline).toLocaleString('en-IN') 
+        ? new Date(exam.deadline).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) 
         : 'No Deadline',
-      'Status': isActive ? 'Active' : 'Expired',
+      'Status': status,
       'Exam Code': exam.exam_code || '—',
       'Created': exam.created_at 
         ? new Date(exam.created_at).toLocaleDateString('en-IN') 
