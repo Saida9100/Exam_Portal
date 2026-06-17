@@ -20,6 +20,10 @@ const CreateExam = () => {
   const [deadline, setDeadline] = useState('');
   const [showDeadline, setShowDeadline] = useState(false);
 
+  // Scheduling states (Upcoming Exam option)
+  const [schedulingMode, setSchedulingMode] = useState('immediate');
+  const [startTime, setStartTime] = useState('');
+
   // PDF states
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfFileName, setPdfFileName] = useState('');
@@ -124,18 +128,38 @@ const CreateExam = () => {
       setError('Please assign this exam to an admin');
       return;
     }
+    if (schedulingMode === 'upcoming' && !startTime) {
+      setError('Please select a Scheduled Start Time for your Upcoming Exam.');
+      return;
+    }
+    if (schedulingMode === 'upcoming' && startTime && showDeadline && deadline) {
+      if (new Date(startTime) >= new Date(deadline)) {
+        setError('Deadline (Exam End Time) must be after the Scheduled Start Time.');
+        return;
+      }
+    }
 
     setLoading(true);
 
     try {
+      const finalDescription = (schedulingMode === 'upcoming' && startTime)
+        ? `${description.trim()}\n[ScheduledStart: ${new Date(startTime).toISOString()}]`.trim()
+        : description.trim();
+
       const formData = new FormData();
       formData.append('title', title.trim());
-      formData.append('description', description.trim());
+      formData.append('description', finalDescription);
       formData.append('total_questions', parseInt(totalQuestions));
       formData.append('duration', parseInt(duration));
       formData.append('deadline', showDeadline ? deadline : '');
       formData.append('pdf_file', pdfFile, pdfFile.name);
       formData.append('answer_key', JSON.stringify(answerKey));
+
+      if (schedulingMode === 'upcoming' && startTime) {
+        formData.append('start_time', new Date(startTime).toISOString());
+        formData.append('scheduled_at', new Date(startTime).toISOString());
+        formData.append('is_upcoming', 'true');
+      }
 
       if (user?.role === 'super_admin') {
         formData.append('admin_id', selectedAdminId);
@@ -157,6 +181,8 @@ const CreateExam = () => {
       setDuration('');
       setDeadline('');
       setShowDeadline(false);
+      setSchedulingMode('immediate');
+      setStartTime('');
       setAnswerKey({});
       removePdf();
 
@@ -361,6 +387,66 @@ const CreateExam = () => {
                       onBlur={(e) => e.target.style.borderColor = '#e0e0e0'}
                     />
                   </div>
+                </div>
+
+                {/* Scheduling Mode (Upcoming Exam option) */}
+                <div style={{ marginBottom: 22, padding: 18, background: '#f8f9ff', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+                  <label style={{ display: 'block', marginBottom: 10, fontWeight: 700, fontSize: 13, color: '#2D0040' }}>
+                    EXAM SCHEDULING MODE (UPCOMING EXAM)
+                  </label>
+                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                    <label style={{
+                      flex: 1, minWidth: 200, padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
+                      border: schedulingMode === 'immediate' ? '2px solid #667eea' : '2px solid #ddd',
+                      background: schedulingMode === 'immediate' ? '#fff' : '#fafafa',
+                      display: 'flex', alignItems: 'center', gap: 10, transition: 'all 0.2s', boxSizing: 'border-box'
+                    }}>
+                      <input
+                        type="radio" name="schedMode" value="immediate"
+                        checked={schedulingMode === 'immediate'}
+                        onChange={() => { setSchedulingMode('immediate'); setStartTime(''); }}
+                        style={{ cursor: 'pointer', accentColor: '#667eea' }}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: '#1a1a2e' }}>🟢 Open Immediately</div>
+                        <div style={{ fontSize: 12, color: '#777' }}>Students can join right away</div>
+                      </div>
+                    </label>
+
+                    <label style={{
+                      flex: 1, minWidth: 200, padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
+                      border: schedulingMode === 'upcoming' ? '2px solid #ff9800' : '2px solid #ddd',
+                      background: schedulingMode === 'upcoming' ? '#fff' : '#fafafa',
+                      display: 'flex', alignItems: 'center', gap: 10, transition: 'all 0.2s', boxSizing: 'border-box'
+                    }}>
+                      <input
+                        type="radio" name="schedMode" value="upcoming"
+                        checked={schedulingMode === 'upcoming'}
+                        onChange={() => setSchedulingMode('upcoming')}
+                        style={{ cursor: 'pointer', accentColor: '#ff9800' }}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: '#e65100' }}>📅 Set as Upcoming Exam</div>
+                        <div style={{ fontSize: 12, color: '#777' }}>Schedule future open date & time</div>
+                      </div>
+                    </label>
+                  </div>
+
+                  {schedulingMode === 'upcoming' && (
+                    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #eee', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <label style={{ fontWeight: 600, fontSize: 13, color: '#555', minWidth: 160 }}>
+                        SCHEDULED START TIME <span style={{ color: '#f44336' }}>*</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={startTime}
+                        onChange={(e) => setStartTime(e.target.value)}
+                        min={new Date().toISOString().slice(0, 16)}
+                        disabled={loading}
+                        style={{ flex: 1, minWidth: 200, padding: '11px 14px', fontSize: 14, border: '2px solid #ff9800', borderRadius: 10, outline: 'none', background: '#fff', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Deadline toggle */}
@@ -592,15 +678,23 @@ const CreateExam = () => {
                 {[
                   { label: 'QUESTIONS', value: totalQ || '—' },
                   { label: 'DURATION', value: duration ? `${duration} min` : '—' },
-                  { label: 'OPTIONS', value: `${optionsPerQuestion} options` },
+                  { label: 'MODE', value: schedulingMode === 'upcoming' ? '⏳ Upcoming' : '🟢 Active' },
                   { label: 'PDF', value: pdfFile ? '✓' : '✗' },
                 ].map(item => (
                   <div key={item.label} style={{ textAlign: 'center', padding: '10px 8px', background: '#f8f9fa', borderRadius: 10 }}>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: '#2D0040' }}>{item.value}</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: '#2D0040' }}>{item.value}</div>
                     <div style={{ fontSize: 10, color: '#aaa', fontWeight: 600, marginTop: 2 }}>{item.label}</div>
                   </div>
                 ))}
               </div>
+
+              {schedulingMode === 'upcoming' && startTime && (
+                <div style={{ textAlign: 'center', padding: '10px', background: '#fff3e0', borderRadius: 10, fontSize: 13, marginBottom: 12, border: '1px solid #ffb74d', color: '#e65100' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 2 }}>SCHEDULED START</div>
+                  <div style={{ fontWeight: 800, fontSize: 14 }}>{new Date(startTime).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+                </div>
+              )}
+
               <div style={{ textAlign: 'center', padding: '10px', background: '#f8f9fa', borderRadius: 10, fontSize: 13 }}>
                 <div style={{ fontSize: 10, color: '#aaa', fontWeight: 600, marginBottom: 4 }}>ANSWER KEYS</div>
                 <div style={{ fontWeight: 800, color: '#2D0040', fontSize: 18 }}>{answeredCount}/{totalQ || '—'}</div>
