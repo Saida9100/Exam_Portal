@@ -5,10 +5,11 @@ import { Card, Button, Badge } from 'react-bootstrap';
 import apiService from '../services/api'; 
 import SharedAdminSidebar from './SharedAdminSidebar';
 import ExportToolbar from './ExportToolbar';
-import { prepareViolationsForExport, getExportFilename } from '../utils/exportUtils';
+import { prepareViolationsForExport, getExportFilename, filterByDateRange } from '../utils/exportUtils';
 
 const DetectedStudents = () => {
   const [results, setResults] = useState([]);
+  const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -123,11 +124,13 @@ const DetectedStudents = () => {
     }
   };
 
-  const filteredResults = results.filter(r =>
+  const searchFilteredResults = results.filter(r =>
     (r.student_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (r.student_email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (r.exam_title || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const finalFilteredResults = filterByDateRange(searchFilteredResults, exportFilters.startDate, exportFilters.endDate, 'submitted_at');
 
   const getStatusBadge = (status) => {
     if (!status) return null;
@@ -173,10 +176,12 @@ const DetectedStudents = () => {
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {results.length > 0 && (
               <ExportToolbar
-                data={prepareViolationsForExport(filteredResults)}
+                data={finalFilteredResults}
+                prepareExportData={prepareViolationsForExport}
                 filename={getExportFilename(admin?.role, 'violations')}
                 title="Proctoring Violations Report"
                 dateField="submitted_at"
+                onFilterChange={(filters) => setExportFilters(filters)}
               />
             )}
             {results.length > 0 && admin?.role === 'super_admin' && (
@@ -209,7 +214,7 @@ const DetectedStudents = () => {
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>Loading detected students...</div>
-        ) : filteredResults.length === 0 ? (
+        ) : finalFilteredResults.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 60, background: '#fff', borderRadius: 12, border: '1px solid #e0e0e0', color: '#888' }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
             <h4 style={{ color: '#333' }}>No Violations Detected!</h4>
@@ -217,7 +222,7 @@ const DetectedStudents = () => {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            {filteredResults.map((result) => {
+            {finalFilteredResults.map((result) => {
               const id = result.attempt_id || result.id;
               const requestStatus = getRequestStatus(id);
               const isRequesting = requestingIds[id];
