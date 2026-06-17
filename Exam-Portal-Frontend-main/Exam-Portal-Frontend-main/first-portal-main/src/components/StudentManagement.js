@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import apiService from '../services/api';
 import SharedAdminSidebar from './SharedAdminSidebar';
 import ExportToolbar from './ExportToolbar'; 
-import { prepareStudentsForExport, getExportFilename } from '../utils/exportUtils';
+import { prepareStudentsForExport, getExportFilename, filterByDateRange } from '../utils/exportUtils';
 
 /* ─── helpers ─── */
 // ✅ PRODUCTION-READY PASSWORD GENERATOR
@@ -117,6 +117,8 @@ const StudentManagement = () => {
 
   const [adminsList, setAdminsList] = useState([]);
   const [selectedAdminId, setSelectedAdminId] = useState('');
+  const [selectedFilterAdminId, setSelectedFilterAdminId] = useState('');
+  const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
   const [deletionRequests, setDeletionRequests] = useState([]);
 
   const fetchStudents = async () => {
@@ -356,10 +358,16 @@ const handleBulkCreate = async () => {
   };
 
   /* ── filtered list ── */
-  const filtered = students.filter(s =>
+  const adminFilteredStudents = selectedFilterAdminId
+    ? students.filter(s => String(s.admin_id) === String(selectedFilterAdminId))
+    : students;
+
+  const searchFilteredStudents = adminFilteredStudents.filter(s =>
     (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (s.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const finalFilteredStudents = filterByDateRange(searchFilteredStudents, exportFilters.startDate, exportFilters.endDate, 'created_at');
 
   /* ── styles ── */
   const tabStyle = (t) => ({
@@ -449,30 +457,53 @@ const handleBulkCreate = async () => {
           {/* ─── TAB: LIST ─── */}
           {tab === 'list' && (
             <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+              {selectedFilterAdminId && (
+                <div style={{ padding: '12px 24px', background: '#e8f5e9', color: '#2e7d32', borderBottom: '1px solid #c8e6c9', fontWeight: 700, fontSize: 14 }}>
+                  🎓 Showing {students.filter(s => String(s.admin_id) === String(selectedFilterAdminId)).length} Student(s) Assigned to this Faculty/Admin
+                </div>
+              )}
               <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0f0f5', display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-                  <div style={{ width: '100%', maxWidth: 500 }}>
-                    <input
-                      placeholder="🔍  Search by name or email..."
-                      value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
-                      style={{ ...inputStyle, width: '100%', marginBottom: 0 }}
-                    />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, flexWrap: 'wrap' }}>
+                    {admin?.role === 'super_admin' && (
+                      <div style={{ minWidth: 200 }}>
+                        <select
+                          value={selectedFilterAdminId}
+                          onChange={e => setSelectedFilterAdminId(e.target.value)}
+                          style={{ ...inputStyle, width: '100%', marginBottom: 0, background: '#fff', color: '#5B0A7B', fontWeight: 600 }}
+                        >
+                          <option value="">All Faculty / Admins</option>
+                          {adminsList.map(a => (
+                            <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 250 }}>
+                      <input
+                        placeholder="🔍 Search by name or email..."
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        style={{ ...inputStyle, width: '100%', marginBottom: 0 }}
+                      />
+                    </div>
                   </div>
                   <ExportToolbar
-                    data={prepareStudentsForExport(filtered)}
+                    data={finalFilteredStudents}
+                    prepareExportData={prepareStudentsForExport}
                     filename={getExportFilename(admin?.role, 'students')}
                     title="Student Accounts Report"
                     dateField="created_at"
                     showDateFilter={true}
                     showSearchFilter={false}
+                    onFilterChange={(filters) => setExportFilters(filters)}
                   />
                 </div>
               </div>
 
               {loading ? (
                 <div style={{ padding: 60, textAlign: 'center', color: '#888' }}>Loading students…</div>
-              ) : filtered.length === 0 ? (
+              ) : finalFilteredStudents.length === 0 ? (
                 <div style={{ padding: 60, textAlign: 'center' }}>
                   <div style={{ fontSize: 56, marginBottom: 12 }}>👤</div>
                   <p style={{ color: '#888', fontSize: 15 }}>No students found. Use the tabs above to add students.</p>
@@ -481,13 +512,13 @@ const handleBulkCreate = async () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: '#f8f6fc' }}>
-                      {['#', 'Name', 'Email', 'Joined', 'Action'].map(h => (
+                      {['#', 'Name', 'Email', 'Assigned Admin', 'Joined', 'Action'].map(h => (
                         <th key={h} style={{ padding: '14px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((s, i) => (
+                    {finalFilteredStudents.map((s, i) => (
                       <tr key={s.id} style={{ borderTop: '1px solid #f0f0f5', transition: 'background 0.15s' }}
                         onMouseEnter={e => e.currentTarget.style.background = '#fdfcff'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -505,6 +536,12 @@ const handleBulkCreate = async () => {
                           </div>
                         </td>
                         <td style={{ padding: '14px 20px', fontSize: 13, color: '#555' }}>{s.email}</td>
+                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#5B0A7B', fontWeight: 600 }}>
+                          {(() => {
+                            const foundAdmin = adminsList.find(a => String(a.id) === String(s.admin_id));
+                            return foundAdmin ? `${foundAdmin.name || foundAdmin.email} (${foundAdmin.id})` : (s.admin_id ? `Admin #${s.admin_id}` : 'Global / Super Admin');
+                          })()}
+                        </td>
                         <td style={{ padding: '14px 20px', fontSize: 12, color: '#888' }}>
                           {new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </td>
