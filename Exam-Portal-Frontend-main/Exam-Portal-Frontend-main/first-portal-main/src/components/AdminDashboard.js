@@ -6,7 +6,7 @@ import { Row, Col, Form, Button, Alert, Modal, Table } from 'react-bootstrap';
 import apiService from '../services/api';
 import SharedAdminSidebar from './SharedAdminSidebar';
 import ExportToolbar from './ExportToolbar';
-import { prepareStudentsForExport, prepareExamsForExport, prepareResultsForExport, prepareAdminsForExport, getExportFilename, filterByDateRange } from '../utils/exportUtils';
+import { prepareStudentsForExport, prepareExamsForExport, prepareResultsForExport, prepareAdminsForExport, getExportFilename, filterByDateRange, parseExamStartTime, cleanExamDescription } from '../utils/exportUtils';
 
 // Password generator (same logic as StudentManagement)
 const generatePassword = (name) => {
@@ -288,9 +288,13 @@ const CreateExam = () => {
   const [totalQuestions, setTotalQuestions] = useState('');
   const [duration, setDuration] = useState('');
   const [deadline, setDeadline] = useState('');
+  const [startTime, setStartTime] = useState('');
   
   const [showDeadlineModal, setShowDeadlineModal] = useState(false);
   const [tempDeadline, setTempDeadline] = useState('');
+
+  const [showStartTimeModal, setShowStartTimeModal] = useState(false);
+  const [tempStartTime, setTempStartTime] = useState('');
   
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -330,6 +334,22 @@ const CreateExam = () => {
     setShowDeadlineModal(false);
   };
 
+  const openStartTimePicker = () => {
+    setTempStartTime(startTime);
+    setShowStartTimeModal(true);
+  };
+
+  const confirmStartTime = () => {
+    setStartTime(tempStartTime);
+    setShowStartTimeModal(false);
+  };
+
+  const clearStartTime = () => {
+    setStartTime('');
+    setTempStartTime('');
+    setShowStartTimeModal(false);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -349,6 +369,11 @@ const CreateExam = () => {
       return;
     }
 
+    if (startTime && deadline && new Date(startTime) >= new Date(deadline)) {
+      setError('Deadline (Exam End Time) must be after the Scheduled Start Time.');
+      return;
+    }
+
     if (admin?.role === 'super_admin' && !selectedAdminId) {
       setError('Please assign this exam to an admin');
       return;
@@ -357,12 +382,18 @@ const CreateExam = () => {
     setLoading(true);
 
     try {
+      const finalDescription = startTime 
+        ? `${description.trim()}\n[ScheduledStart: ${new Date(startTime).toISOString()}]`.trim()
+        : description.trim() || null;
+
       const examData = {
         title: title.trim(),
-        description: description.trim() || null,
+        description: finalDescription,
         total_questions: parseInt(totalQuestions),
         duration: parseInt(duration),
         deadline: deadline || null,
+        start_time: startTime || null,
+        scheduled_at: startTime || null,
       };
 
       if (admin?.role === 'super_admin') {
@@ -392,6 +423,7 @@ const CreateExam = () => {
     setTotalQuestions('');
     setDuration('');
     setDeadline('');
+    setStartTime('');
     setSuccess(false);
     setError('');
   };
@@ -494,72 +526,145 @@ const CreateExam = () => {
                     </Col>
                   </Row>
 
-                  <Form.Group className="mb-4">
-                    <Form.Label className="form-label-custom">Deadline (Optional)</Form.Label>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      {deadline ? (
-                        <div style={{
-                          flex: 1,
-                          padding: '12px 16px',
-                          borderRadius: 10,
-                          border: '1.5px solid #4caf50',
-                          background: '#f1f8e9',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                        }}>
-                          <div>
-                            <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase' }}>
-                              Deadline Set
+                  <Row>
+                    <Col md={6}>
+                      <Form.Group className="mb-4">
+                        <Form.Label className="form-label-custom">Scheduled Start Time (Upcoming)</Form.Label>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                          {startTime ? (
+                            <div style={{
+                              flex: 1,
+                              padding: '12px 16px',
+                              borderRadius: 10,
+                              border: '1.5px solid #ff9800',
+                              background: '#fff8e1',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}>
+                              <div>
+                                <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase' }}>
+                                  Starts At
+                                </div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: '#2D0040' }}>
+                                  {formatDeadlineDisplay(startTime)}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <Button
+                                  size="sm"
+                                  variant="outline-primary"
+                                  onClick={openStartTimePicker}
+                                  style={{ borderRadius: 8, fontWeight: 600, fontSize: 12 }}
+                                  disabled={loading}
+                                >
+                                  Change
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline-danger"
+                                  onClick={clearStartTime}
+                                  style={{ borderRadius: 8, fontWeight: 600, fontSize: 12 }}
+                                  disabled={loading}
+                                >
+                                  Remove
+                                </Button>
+                              </div>
                             </div>
-                            <div style={{ fontSize: 15, fontWeight: 600, color: '#2D0040' }}>
-                              {formatDeadlineDisplay(deadline)}
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: 8 }}>
+                          ) : (
                             <Button
-                              size="sm"
-                              variant="outline-primary"
-                              onClick={openDeadlinePicker}
-                              style={{ borderRadius: 8, fontWeight: 600, fontSize: 12 }}
+                              variant="outline-secondary"
+                              onClick={openStartTimePicker}
                               disabled={loading}
+                              style={{
+                                borderRadius: 10,
+                                padding: '12px 24px',
+                                fontWeight: 600,
+                                width: '100%',
+                                border: '1.5px dashed #ffe0b2',
+                                color: '#888',
+                                background: '#fafafa',
+                              }}
                             >
-                              Change
+                              ⏳ Schedule Start Time
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="outline-danger"
-                              onClick={clearDeadline}
-                              style={{ borderRadius: 8, fontWeight: 600, fontSize: 12 }}
-                              disabled={loading}
-                            >
-                              Remove
-                            </Button>
-                          </div>
+                          )}
                         </div>
-                      ) : (
-                        <Button
-                          variant="outline-secondary"
-                          onClick={openDeadlinePicker}
-                          disabled={loading}
-                          style={{
-                            borderRadius: 10,
-                            padding: '12px 24px',
-                            fontWeight: 600,
-                            width: '100%',
-                            border: '1.5px dashed #E1BEE7',
-                            color: '#888',
-                            background: '#fafafa',
-                          }}
-                        >
-                          📅 Click to Set Deadline
-                        </Button>
-                      )}
-                    </div>
-                    <Form.Text style={{ color: '#888', fontSize: 11 }}>
-                      Leave empty for no deadline
-                    </Form.Text>
-                  </Form.Group>
+                        <Form.Text style={{ color: '#888', fontSize: 11 }}>
+                          Leave empty to open immediately
+                        </Form.Text>
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group className="mb-4">
+                        <Form.Label className="form-label-custom">Deadline (Optional)</Form.Label>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                          {deadline ? (
+                            <div style={{
+                              flex: 1,
+                              padding: '12px 16px',
+                              borderRadius: 10,
+                              border: '1.5px solid #4caf50',
+                              background: '#f1f8e9',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}>
+                              <div>
+                                <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase' }}>
+                                  Deadline Set
+                                </div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: '#2D0040' }}>
+                                  {formatDeadlineDisplay(deadline)}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <Button
+                                  size="sm"
+                                  variant="outline-primary"
+                                  onClick={openDeadlinePicker}
+                                  style={{ borderRadius: 8, fontWeight: 600, fontSize: 12 }}
+                                  disabled={loading}
+                                >
+                                  Change
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline-danger"
+                                  onClick={clearDeadline}
+                                  style={{ borderRadius: 8, fontWeight: 600, fontSize: 12 }}
+                                  disabled={loading}
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <Button
+                              variant="outline-secondary"
+                              onClick={openDeadlinePicker}
+                              disabled={loading}
+                              style={{
+                                borderRadius: 10,
+                                padding: '12px 24px',
+                                fontWeight: 600,
+                                width: '100%',
+                                border: '1.5px dashed #E1BEE7',
+                                color: '#888',
+                                background: '#fafafa',
+                              }}
+                            >
+                              📅 Click to Set Deadline
+                            </Button>
+                          )}
+                        </div>
+                        <Form.Text style={{ color: '#888', fontSize: 11 }}>
+                          Leave empty for no deadline
+                        </Form.Text>
+                      </Form.Group>
+                    </Col>
+                  </Row>
 
                   {admin?.role === 'super_admin' && (
                     <Form.Group className="mb-3">
@@ -602,6 +707,23 @@ const CreateExam = () => {
                       </div>
                     </Col>
                   </Row>
+
+                  {startTime && (
+                    <div style={{
+                      marginTop: 16,
+                      padding: 12,
+                      background: '#fff8e1',
+                      borderRadius: 10,
+                      textAlign: 'center',
+                    }}>
+                      <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase' }}>
+                        Starts At
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#e65100' }}>
+                        {formatDeadlineDisplay(startTime)}
+                      </div>
+                    </div>
+                  )}
 
                   {deadline && (
                     <div style={{
@@ -709,6 +831,80 @@ const CreateExam = () => {
                   }}
                 >
                   ✓ OK — Set Deadline
+                </Button>
+              </div>
+            </div>
+          </Modal.Body>
+        </Modal>
+
+        {/* Start Time Picker Modal */}
+        <Modal show={showStartTimeModal} onHide={() => setShowStartTimeModal(false)} centered>
+          <Modal.Body style={{ padding: 0 }}>
+            <div style={{ padding: 28, textAlign: 'center' }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>⏳</div>
+              <h5 style={{ fontWeight: 700, color: '#2D0040', marginBottom: 4 }}>Set Scheduled Start Time</h5>
+              <p style={{ color: '#888', fontSize: 13, marginBottom: 24 }}>
+                Choose the date and time when this exam becomes available to students
+              </p>
+
+              <Form.Control
+                type="datetime-local"
+                value={tempStartTime}
+                onChange={(e) => setTempStartTime(e.target.value)}
+                min={new Date().toISOString().slice(0, 16)}
+                style={{
+                  borderRadius: 12,
+                  padding: '14px 16px',
+                  border: '2px solid #ffb74d',
+                  fontSize: 16,
+                  fontWeight: 500,
+                  textAlign: 'center',
+                  marginBottom: 12,
+                }}
+              />
+
+              {tempStartTime && (
+                <div style={{
+                  background: '#fff8e1',
+                  borderRadius: 10,
+                  padding: 12,
+                  marginBottom: 20,
+                  fontSize: 14,
+                  color: '#e65100',
+                  fontWeight: 500,
+                }}>
+                  Selected: {formatDeadlineDisplay(tempStartTime)}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 8 }}>
+                <Button
+                  variant="outline-secondary"
+                  onClick={() => setShowStartTimeModal(false)}
+                  style={{ borderRadius: 10, padding: '10px 28px', fontWeight: 600 }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="outline-danger"
+                  onClick={clearStartTime}
+                  style={{ borderRadius: 10, padding: '10px 28px', fontWeight: 600 }}
+                >
+                  Immediately
+                </Button>
+                <Button
+                  onClick={confirmStartTime}
+                  disabled={!tempStartTime}
+                  style={{
+                    borderRadius: 10,
+                    padding: '10px 28px',
+                    fontWeight: 700,
+                    background: '#e65100',
+                    border: 'none',
+                    fontSize: 15,
+                  }}
+                >
+                  ✓ OK — Set Start Time
                 </Button>
               </div>
             </div>
@@ -934,6 +1130,7 @@ const ManageExams = () => {
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Title</th>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Questions</th>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Duration</th>
+                  <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Start Time</th>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Deadline</th>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Status</th>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Actions</th>
@@ -942,17 +1139,32 @@ const ManageExams = () => {
                 <tbody>
                   {finalFilteredExams.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ padding: 40, textAlign: 'center', color: '#888' }}>
+                      <td colSpan="7" style={{ padding: 40, textAlign: 'center', color: '#888' }}>
                         No matching exams found.
                       </td>
                     </tr>
                   ) : finalFilteredExams.map((exam) => {
-                  const isActive = !exam.deadline || new Date(exam.deadline) > new Date();
+                  const startTime = parseExamStartTime(exam);
+                  const isUpcoming = startTime && startTime > new Date();
+                  const isActive = !isUpcoming && (!exam.deadline || new Date(exam.deadline) > new Date());
                   return (
                     <tr key={exam.id}>
-                      <td style={{ padding: 12, fontWeight: 500 }}>{exam.title}</td>
+                      <td style={{ padding: 12 }}>
+                        <div style={{ fontWeight: 600, color: '#2D0040' }}>{exam.title}</div>
+                        <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{cleanExamDescription(exam.description)}</div>
+                      </td>
                       <td style={{ padding: 12 }}>{exam.total_questions}</td>
                       <td style={{ padding: 12 }}>{exam.duration} min</td>
+                      <td style={{ padding: 12, fontSize: 13, color: '#e65100', fontWeight: 600 }}>
+                        {startTime
+                          ? new Date(startTime).toLocaleString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : 'Immediately'}
+                      </td>
                       <td style={{ padding: 12, fontSize: 13 }}>
                         {exam.deadline
                           ? new Date(exam.deadline).toLocaleString('en-IN', {
@@ -969,10 +1181,10 @@ const ManageExams = () => {
                           borderRadius: 20,
                           fontSize: 12,
                           fontWeight: 600,
-                          background: isActive ? '#e8f5e9' : '#ffebee',
-                          color: isActive ? '#2e7d32' : '#c62828',
+                          background: isUpcoming ? '#fff3e0' : (isActive ? '#e8f5e9' : '#ffebee'),
+                          color: isUpcoming ? '#e65100' : (isActive ? '#2e7d32' : '#c62828'),
                         }}>
-                          {isActive ? 'Active' : 'Expired'}
+                          {isUpcoming ? '⏳ Upcoming' : (isActive ? 'Active' : 'Expired')}
                         </span>
                       </td>
                       <td style={{ padding: 12 }}>
