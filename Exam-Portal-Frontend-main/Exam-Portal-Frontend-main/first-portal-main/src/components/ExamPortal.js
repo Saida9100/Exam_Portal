@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { Row, Col, Nav, Form, Button, Badge, Alert, Modal } from 'react-bootstrap';
 import Sidebar from './Sidebar';
 import apiService from '../services/api';
+import { parseExamStartTime, cleanExamDescription } from '../utils/exportUtils';
 
 const ExamPortal = () => {
   const navigate = useNavigate();
@@ -52,33 +53,34 @@ const ExamPortal = () => {
     apiService.logout();
   };
 
-  // Get active exams (not expired)
+  // Get upcoming exams (start time in the future)
+  const getUpcomingExams = () => {
+    const currentTime = new Date();
+    return exams.filter(exam => {
+      const startTime = parseExamStartTime(exam);
+      if (!startTime) return false;
+      if (exam.deadline && new Date(exam.deadline) <= currentTime) return false;
+      return startTime > currentTime;
+    });
+  };
+
+  // Get active ongoing exams (start time passed or immediately active, and not expired)
   const getActiveExams = () => {
     const currentTime = new Date();
     return exams.filter(exam => {
-      if (!exam.deadline) return true; // No deadline means always active
+      const startTime = parseExamStartTime(exam);
+      if (startTime && startTime > currentTime) return false; // In future -> upcoming
+      if (!exam.deadline) return true; // No deadline -> always active
       return new Date(exam.deadline) > currentTime;
     });
   };
 
-  // Get expired exams
+  // Get expired past exams
   const getExpiredExams = () => {
     const currentTime = new Date();
     return exams.filter(exam => {
       if (!exam.deadline) return false;
       return new Date(exam.deadline) <= currentTime;
-    });
-  };
-
-  // Get upcoming exams (within next 7 days)
-  const getUpcomingExams = () => {
-    const currentTime = new Date();
-    const sevenDaysFromNow = new Date(currentTime.getTime() + 7 * 24 * 60 * 60 * 1000);
-    
-    return exams.filter(exam => {
-      if (!exam.created_at) return false;
-      const createdDate = new Date(exam.created_at);
-      return createdDate > currentTime && createdDate <= sevenDaysFromNow;
     });
   };
 
@@ -174,6 +176,10 @@ const ExamPortal = () => {
 
   const getStatusBadge = (exam) => {
     const currentTime = new Date();
+    const startTime = parseExamStartTime(exam);
+    if (startTime && startTime > currentTime) {
+      return <Badge className="badge-status" style={{ background: '#fff3e0', color: '#e65100', border: '1px solid #ffb74d' }}>Upcoming</Badge>;
+    }
     
     if (!exam.deadline) {
       return <Badge className="badge-status" bg="primary">Active</Badge>;
@@ -375,9 +381,9 @@ const ExamPortal = () => {
                       </div>
                     )}
 
-                    {exam.description && (
+                    {cleanExamDescription(exam.description) && (
                       <p style={{ fontSize: 13, color: '#666', marginBottom: 12, lineHeight: 1.5 }}>
-                        {exam.description}
+                        {cleanExamDescription(exam.description)}
                       </p>
                     )}
 
@@ -385,6 +391,33 @@ const ExamPortal = () => {
                       <span>📊 {exam.total_questions} Questions</span>
                       <span>⏱ {exam.duration} min</span>
                     </div>
+
+                    {(() => {
+                      const startTime = parseExamStartTime(exam);
+                      if (!startTime) return null;
+                      return (
+                        <div style={{
+                          marginTop: 12,
+                          padding: 8,
+                          background: '#fff3e0',
+                          border: '1px solid #ffb74d',
+                          borderRadius: 8,
+                          fontSize: 12,
+                          color: '#e65100',
+                          fontWeight: 600,
+                          textAlign: 'center'
+                        }}>
+                          ⏳ Scheduled to Open On:<br/>
+                          <strong>{startTime.toLocaleString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}</strong>
+                        </div>
+                      );
+                    })()}
 
                     {exam.deadline && (
                       <div style={{ 
@@ -477,6 +510,25 @@ const ExamPortal = () => {
                         </Button>
                       );
                     })()}
+
+                    {activeTab === 'upcoming' && (
+                      <Button
+                        disabled={true}
+                        style={{
+                          width: '100%',
+                          marginTop: 12,
+                          background: '#e0e0e0',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '10px',
+                          fontWeight: 600,
+                          fontSize: 14,
+                          color: '#666'
+                        }}
+                      >
+                        ⏳ Available Soon
+                      </Button>
+                    )}
                   </div>
                 </Col>
               );
