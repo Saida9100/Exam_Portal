@@ -6,7 +6,7 @@ import { Row, Col, Form, Button, Alert, Modal, Table } from 'react-bootstrap';
 import apiService from '../services/api';
 import SharedAdminSidebar from './SharedAdminSidebar';
 import ExportToolbar from './ExportToolbar';
-import { prepareStudentsForExport, prepareExamsForExport, prepareResultsForExport, prepareAdminsForExport, getExportFilename } from '../utils/exportUtils';
+import { prepareStudentsForExport, prepareExamsForExport, prepareResultsForExport, prepareAdminsForExport, getExportFilename, filterByDateRange } from '../utils/exportUtils';
 
 // Password generator (same logic as StudentManagement)
 const generatePassword = (name) => {
@@ -735,14 +735,21 @@ const ManageExams = () => {
   const [examToDelete, setExamToDelete] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredExams = exams.filter(e => 
-    (e.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (e.description || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const [adminsList, setAdminsList] = useState([]);
+  const [selectedFilterAdminId, setSelectedFilterAdminId] = useState('');
+  const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
 
   useEffect(() => {
     fetchExams();
-  }, []);
+    if (admin?.role === 'super_admin') {
+      apiService.getAdmins()
+        .then(res => {
+          const allAdmins = res.admins || res.data || [];
+          setAdminsList(allAdmins.filter(a => a.role === 'admin'));
+        })
+        .catch(console.error);
+    }
+  }, [admin?.role]);
 
   const fetchExams = async () => {
     try {
@@ -755,6 +762,17 @@ const ManageExams = () => {
       setLoading(false);
     }
   };
+
+  const adminFilteredExams = selectedFilterAdminId 
+    ? exams.filter(e => String(e.admin_id) === String(selectedFilterAdminId))
+    : exams;
+
+  const searchFilteredExams = adminFilteredExams.filter(e => 
+    (e.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (e.description || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const finalFilteredExams = filterByDateRange(searchFilteredExams, exportFilters.startDate, exportFilters.endDate, 'created_at');
 
   const handleLogout = () => {
     apiService.logout();
@@ -778,10 +796,7 @@ const ManageExams = () => {
     if (!examToDelete) return;
 
     try {
-      // Call API to delete exam (you'll need to implement this endpoint)
       await apiService.deleteExam(examToDelete.id);
-      
-      // Refresh exams list
       fetchExams();
       setShowDeleteModal(false);
       setExamToDelete(null);
@@ -845,11 +860,27 @@ const ManageExams = () => {
               gap: 10,
               marginBottom: 20,
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 24, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, flexWrap: 'wrap' }}>
                 <h5 style={{ margin: 0, color: '#2D0040', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                  All Exams ({exams.length})
+                  All Exams ({finalFilteredExams.length})
                 </h5>
-                <div style={{ width: '100%', maxWidth: 500 }}>
+
+                {admin?.role === 'super_admin' && (
+                  <div style={{ minWidth: 200 }}>
+                    <select
+                      value={selectedFilterAdminId}
+                      onChange={e => setSelectedFilterAdminId(e.target.value)}
+                      style={{ padding: '8px 12px', borderRadius: 8, border: '2px solid #f0f0f5', fontSize: 13, outline: 'none', background: '#fff', color: '#5B0A7B', fontWeight: 600 }}
+                    >
+                      <option value="">All Faculty / Admins</option>
+                      {adminsList.map(a => (
+                        <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div style={{ flex: 1, minWidth: 250 }}>
                   <input
                     placeholder="🔍  Search exams by title or description..."
                     value={searchTerm}
@@ -860,10 +891,12 @@ const ManageExams = () => {
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <ExportToolbar
-                  data={prepareExamsForExport(filteredExams)}
+                  data={finalFilteredExams}
+                  prepareExportData={prepareExamsForExport}
                   filename={getExportFilename(admin?.role, 'exams')}
                   title="Exams Report"
                   dateField="created_at"
+                  onFilterChange={(filters) => setExportFilters(filters)}
                 />
                 {admin?.role === 'super_admin' && (
                   <Button
@@ -907,13 +940,13 @@ const ManageExams = () => {
                 </tr>
               </thead>
                 <tbody>
-                  {filteredExams.length === 0 ? (
+                  {finalFilteredExams.length === 0 ? (
                     <tr>
                       <td colSpan="6" style={{ padding: 40, textAlign: 'center', color: '#888' }}>
                         No matching exams found.
                       </td>
                     </tr>
-                  ) : filteredExams.map((exam) => {
+                  ) : finalFilteredExams.map((exam) => {
                   const isActive = !exam.deadline || new Date(exam.deadline) > new Date();
                   return (
                     <tr key={exam.id}>
@@ -1017,11 +1050,48 @@ const ViewResults = () => {
   const [deletionRequests, setDeletionRequests] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredResults = results.filter(r => 
+  const [adminsList, setAdminsList] = useState([]);
+  const [selectedFilterAdminId, setSelectedFilterAdminId] = useState('');
+  const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
+  const [examAdminMap, setExamAdminMap] = useState({});
+
+  useEffect(() => {
+    fetchResults();
+    fetchDeletionRequests();
+    apiService.getExams().then(data => {
+      const examsList = data.exams || data || [];
+      const map = {};
+      examsList.forEach(e => {
+        map[e.id] = e.admin_id;
+        if (e.title) map[e.title] = e.admin_id;
+      });
+      setExamAdminMap(map);
+    }).catch(() => {});
+
+    if (admin?.role === 'super_admin') {
+      apiService.getAdmins()
+        .then(res => {
+          const allAdmins = res.admins || res.data || [];
+          setAdminsList(allAdmins.filter(a => a.role === 'admin'));
+        })
+        .catch(console.error);
+    }
+  }, [admin?.role]);
+
+  const adminFilteredResults = selectedFilterAdminId
+    ? results.filter(r => {
+        const rAdmin = r.admin_id || examAdminMap[r.exam_id] || examAdminMap[r.exam_title];
+        return String(rAdmin) === String(selectedFilterAdminId);
+      })
+    : results;
+
+  const searchFilteredResults = adminFilteredResults.filter(r => 
     (r.student_name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
     (r.student_email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (r.exam_title || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const finalFilteredResults = filterByDateRange(searchFilteredResults, exportFilters.startDate, exportFilters.endDate, 'submitted_at');
 
   const confirmDelete = async () => {
     try {
@@ -1063,11 +1133,6 @@ const ViewResults = () => {
       }
     }
   };
-
-  useEffect(() => {
-    fetchResults();
-    fetchDeletionRequests();
-  }, []);
 
   const fetchDeletionRequests = async () => {
     try {
@@ -1128,11 +1193,27 @@ const ViewResults = () => {
         ) : (
           <div className="create-exam-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 24, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, flexWrap: 'wrap' }}>
                 <h5 style={{ margin: 0, color: '#2D0040', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                  All Submissions ({results.length})
+                  All Submissions ({finalFilteredResults.length})
                 </h5>
-                <div style={{ width: '100%', maxWidth: 500 }}>
+
+                {admin?.role === 'super_admin' && (
+                  <div style={{ minWidth: 200 }}>
+                    <select
+                      value={selectedFilterAdminId}
+                      onChange={e => setSelectedFilterAdminId(e.target.value)}
+                      style={{ padding: '8px 12px', borderRadius: 8, border: '2px solid #f0f0f5', fontSize: 13, outline: 'none', background: '#fff', color: '#5B0A7B', fontWeight: 600 }}
+                    >
+                      <option value="">All Faculty / Admins</option>
+                      {adminsList.map(a => (
+                        <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div style={{ flex: 1, minWidth: 250 }}>
                   <input
                     placeholder="🔍  Search by student, email or exam..."
                     value={searchTerm}
@@ -1143,10 +1224,12 @@ const ViewResults = () => {
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <ExportToolbar
-                  data={prepareResultsForExport(filteredResults)}
+                  data={finalFilteredResults}
+                  prepareExportData={prepareResultsForExport}
                   filename={getExportFilename(admin?.role, 'results')}
                   title="Student Results Report"
                   dateField="submitted_at"
+                  onFilterChange={(filters) => setExportFilters(filters)}
                 />
                 {admin?.role === 'super_admin' && (
                   <Button
@@ -1179,13 +1262,13 @@ const ViewResults = () => {
                 </tr>
               </thead>
                 <tbody>
-                  {filteredResults.length === 0 ? (
+                  {finalFilteredResults.length === 0 ? (
                     <tr>
                       <td colSpan="9" style={{ padding: 40, textAlign: 'center', color: '#888' }}>
                         No matching results found.
                       </td>
                     </tr>
-                  ) : filteredResults.map((result, idx) => {
+                  ) : finalFilteredResults.map((result, idx) => {
                     const percentage = ((result.score / result.total_questions) * 100).toFixed(1);
                   const passed = percentage >= 60;
                   
@@ -1389,6 +1472,10 @@ const ManageAdmins = () => {
   const adminInitial = admin?.name ? admin.name.charAt(0).toUpperCase() : 'A';
 
   const [admins, setAdmins] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [selectedFilterAdminId, setSelectedFilterAdminId] = useState('');
+  const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -1419,12 +1506,28 @@ const ManageAdmins = () => {
     }
   };
 
-  useEffect(() => { fetchAdmins(); }, []);
+  const fetchStudents = async () => {
+    try {
+      const res = await apiService.getStudents();
+      setStudents(res.students || []);
+    } catch (e) { console.error(e); }
+  };
 
-  const filteredAdmins = admins.filter(a => 
+  useEffect(() => { 
+    fetchAdmins(); 
+    fetchStudents();
+  }, []);
+
+  const dropdownFilteredAdmins = selectedFilterAdminId
+    ? admins.filter(a => String(a.id) === String(selectedFilterAdminId))
+    : admins;
+
+  const searchFilteredAdmins = dropdownFilteredAdmins.filter(a => 
     (a.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
     (a.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const finalFilteredAdmins = filterByDateRange(searchFilteredAdmins, exportFilters.startDate, exportFilters.endDate, 'created_at');
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -1606,25 +1709,46 @@ const ManageAdmins = () => {
 
         {tab === 'list' && (
           <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+            {selectedFilterAdminId && (
+              <div style={{ padding: '12px 24px', background: '#e8f5e9', color: '#2e7d32', borderBottom: '1px solid #c8e6c9', fontWeight: 700, fontSize: 14 }}>
+                🎓 Number of Students Assigned to this Faculty/Admin: {students.filter(s => String(s.admin_id) === String(selectedFilterAdminId)).length}
+              </div>
+            )}
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0f0f5', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-              <div style={{ width: '100%', maxWidth: 500 }}>
-                <input
-                  placeholder="🔍  Search admins by name or email..."
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                  style={{ padding: '10px 16px', borderRadius: 8, border: '2px solid #f0f0f5', fontSize: 14, width: '100%', outline: 'none' }}
-                />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, flexWrap: 'wrap' }}>
+                <div style={{ minWidth: 200 }}>
+                  <select
+                    value={selectedFilterAdminId}
+                    onChange={e => setSelectedFilterAdminId(e.target.value)}
+                    style={{ padding: '8px 12px', borderRadius: 8, border: '2px solid #f0f0f5', fontSize: 13, outline: 'none', background: '#fff', color: '#5B0A7B', fontWeight: 600 }}
+                  >
+                    <option value="">All Faculty / Admins</option>
+                    {admins.map(a => (
+                      <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ flex: 1, minWidth: 250 }}>
+                  <input
+                    placeholder="🔍  Search admins by name or email..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    style={{ padding: '10px 16px', borderRadius: 8, border: '2px solid #f0f0f5', fontSize: 14, width: '100%', outline: 'none' }}
+                  />
+                </div>
               </div>
               <ExportToolbar
-                data={prepareAdminsForExport(filteredAdmins)}
+                data={finalFilteredAdmins}
+                prepareExportData={prepareAdminsForExport}
                 filename={getExportFilename('super_admin', 'admins')}
                 title="Admins Report"
                 dateField="created_at"
+                onFilterChange={(filters) => setExportFilters(filters)}
               />
             </div>
             {loading ? (
               <div style={{ padding: 60, textAlign: 'center', color: '#888' }}>Loading admins…</div>
-            ) : filteredAdmins.length === 0 ? (
+            ) : finalFilteredAdmins.length === 0 ? (
               <div style={{ padding: 60, textAlign: 'center' }}>
                 <div style={{ fontSize: 56, marginBottom: 12 }}>🛡️</div>
                 <p style={{ color: '#888', fontSize: 15 }}>No admins found.</p>
@@ -1633,13 +1757,13 @@ const ManageAdmins = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#f8f6fc' }}>
-                    {['#', 'Name', 'Email', 'Role', 'Joined', 'Action'].map(h => (
+                    {['#', 'Name', 'Email', 'Role', 'Assigned Students', 'Joined', 'Action'].map(h => (
                       <th key={h} style={{ padding: '14px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAdmins.map((a, i) => (
+                  {finalFilteredAdmins.map((a, i) => (
                     <tr key={a.id || i} style={{ borderTop: '1px solid #f0f0f5' }}>
                       <td style={{ padding: '14px 20px', fontSize: 13, color: '#999' }}>{i + 1}</td>
                       <td style={{ padding: '14px 20px' }}>
@@ -1655,6 +1779,9 @@ const ManageAdmins = () => {
                         <span style={{ padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: '#e8eaf6', color: '#3949ab' }}>
                           {a.role === 'super_admin' ? 'Super Admin' : 'Admin (Faculty)'}
                         </span>
+                      </td>
+                      <td style={{ padding: '14px 20px', fontWeight: 600, color: '#2e7d32', fontSize: 13 }}>
+                        {students.filter(s => String(s.admin_id) === String(a.id)).length} Students
                       </td>
                       <td style={{ padding: '14px 20px', fontSize: 12, color: '#888' }}>
                         {a.created_at ? new Date(a.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
