@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Row, Col, Button, Alert } from 'react-bootstrap';
 import Sidebar from './Sidebar';
 import apiService from '../services/api';
+import { parseExamStartTime, cleanExamDescription } from '../utils/exportUtils';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -23,7 +24,6 @@ const Dashboard = () => {
       setLoading(true);
       setError('');
       
-      // Fetch exams and results in parallel
       const [examsData, resultsData] = await Promise.all([
         apiService.getExams(),
         apiService.getUserResults().catch(() => ({ results: [] }))
@@ -43,11 +43,13 @@ const Dashboard = () => {
     apiService.logout();
   };
 
-  // Calculate active exams (not expired)
+  // Calculate active ongoing exams (not upcoming and not expired)
   const getActiveExamsCount = () => {
     const currentTime = new Date();
     return exams.filter((exam) => {
-      if (!exam.deadline) return true; // No deadline means always active
+      const startTime = parseExamStartTime(exam);
+      if (startTime && startTime > currentTime) return false; // Upcoming
+      if (!exam.deadline) return true; // No deadline -> active
       return new Date(exam.deadline) > currentTime;
     }).length;
   };
@@ -57,13 +59,14 @@ const Dashboard = () => {
     return results.length;
   };
 
-  // Calculate upcoming exams (with deadline in future)
+  // Calculate upcoming exams (start time in the future)
   const getUpcomingExamsCount = () => {
     const currentTime = new Date();
     return exams.filter((exam) => {
-      if (!exam.deadline) return false;
-      const deadline = new Date(exam.deadline);
-      return deadline > currentTime;
+      const startTime = parseExamStartTime(exam);
+      if (!startTime) return false;
+      if (exam.deadline && new Date(exam.deadline) <= currentTime) return false;
+      return startTime > currentTime;
     }).length;
   };
 
@@ -256,7 +259,7 @@ const Dashboard = () => {
 
         {/* Quick Actions */}
         <Row className="g-4 mt-4">
-          <Col md={6}>
+          <Col md={4}>
             <div 
               className="stat-card" 
               style={{ cursor: activeExamsCount > 0 ? 'pointer' : 'not-allowed', opacity: activeExamsCount > 0 ? 1 : 0.6 }} 
@@ -276,14 +279,34 @@ const Dashboard = () => {
               </div>
             </div>
           </Col>
-          <Col md={6}>
+          <Col md={4}>
+            <div 
+              className="stat-card" 
+              style={{ cursor: upcomingExamsCount > 0 ? 'pointer' : 'not-allowed', opacity: upcomingExamsCount > 0 ? 1 : 0.6 }} 
+              onClick={() => upcomingExamsCount > 0 && navigate('/exams')}
+            >
+              <div className="d-flex align-items-center gap-3">
+                <div className="stat-icon" style={{ background: '#FFF3E0', marginBottom: 0 }}>📅</div>
+                <div>
+                  <h5 style={{ margin: 0, color: '#2D0040', fontWeight: 700 }}>Upcoming Exams</h5>
+                  <p style={{ margin: 0, color: '#888', fontSize: 13 }}>
+                    {upcomingExamsCount > 0 
+                      ? `${upcomingExamsCount} exam${upcomingExamsCount > 1 ? 's' : ''} scheduled`
+                      : 'No upcoming exams'
+                    }
+                  </p>
+                </div>
+              </div>
+            </div>
+          </Col>
+          <Col md={4}>
             <div 
               className="stat-card" 
               style={{ cursor: completedExamsCount > 0 ? 'pointer' : 'not-allowed', opacity: completedExamsCount > 0 ? 1 : 0.6 }} 
               onClick={() => completedExamsCount > 0 && navigate('/results')}
             >
               <div className="d-flex align-items-center gap-3">
-                <div className="stat-icon" style={{ background: '#FFF3E0', marginBottom: 0 }}>📈</div>
+                <div className="stat-icon" style={{ background: '#F3E5F5', marginBottom: 0 }}>📈</div>
                 <div>
                   <h5 style={{ margin: 0, color: '#2D0040', fontWeight: 700 }}>View Results</h5>
                   <p style={{ margin: 0, color: '#888', fontSize: 13 }}>
