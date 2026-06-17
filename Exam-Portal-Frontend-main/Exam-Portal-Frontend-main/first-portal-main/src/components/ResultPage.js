@@ -6,7 +6,7 @@ import { Button, Spinner, Alert } from 'react-bootstrap';
 import Sidebar from './Sidebar';
 import apiService from '../services/api';
 import ExportToolbar from './ExportToolbar';
-import { prepareStudentResultsForExport, getExportFilename } from '../utils/exportUtils';
+import { prepareStudentResultsForExport, getExportFilename, filterByDateRange } from '../utils/exportUtils';
 
 const ResultPage = () => {
   const { attemptId } = useParams();
@@ -20,6 +20,7 @@ const ResultPage = () => {
 
   const [result, setResult] = useState(null);
   const [allResults, setAllResults] = useState([]);
+  const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -95,6 +96,8 @@ const ResultPage = () => {
   };
 
   const handleLogout = () => apiService.logout();
+
+  const finalAllResults = filterByDateRange(allResults, exportFilters.startDate, exportFilters.endDate, 'submitted_at');
 
   // ─── Download Answer Key ─────────────────────────────────────────────────
 
@@ -314,15 +317,17 @@ const ResultPage = () => {
               <div className="card" style={{ borderRadius:14, border:'none', boxShadow:'0 4px 16px rgba(0,0,0,0.06)', overflow:'hidden' }}>
                 <div style={{ padding: '20px 24px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                   <h5 style={{ margin: 0, fontWeight: 700, color: '#1a1a2e', fontSize: 16 }}>
-                    📊 All Exam Results ({allResults.length})
+                    📊 All Exam Results ({finalAllResults.length})
                   </h5>
                   <ExportToolbar
-                    data={prepareStudentResultsForExport(allResults)}
+                    data={finalAllResults}
+                    prepareExportData={prepareStudentResultsForExport}
                     filename={getExportFilename('student', 'results')}
                     title="My Exam Results Report"
                     dateField="submitted_at"
                     showDateFilter={true}
                     showSearchFilter={false}
+                    onFilterChange={(filters) => setExportFilters(filters)}
                   />
                 </div>
                 <div style={{ overflowX:'auto' }}>
@@ -338,7 +343,7 @@ const ResultPage = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {allResults.map((res, idx) => {
+                      {finalAllResults.map((res, idx) => {
                         const percentage = res.total_questions > 0 ? ((res.score / res.total_questions) * 100).toFixed(2) : 0;
                         return (
                           <tr key={idx} style={{ borderBottom: '1px solid #eee', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafafa'} onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
