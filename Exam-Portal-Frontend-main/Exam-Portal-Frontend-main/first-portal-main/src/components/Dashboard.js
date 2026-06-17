@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Row, Col, Button, Alert } from 'react-bootstrap';
 import Sidebar from './Sidebar';
 import apiService from '../services/api';
-import { parseExamStartTime, cleanExamDescription } from '../utils/exportUtils';
+import { parseExamStartTime } from '../utils/exportUtils';
 
 const Dashboard = () => {
   const navigate = useNavigate();
