@@ -1,13 +1,14 @@
 /* eslint-disable */
 /**
  * ExportToolbar - Reusable component for data export with filters
- * Provides CSV, Excel, PDF download buttons with date range filtering
+ * Provides CSV, Excel, PDF download buttons with date range filtering and syncs with UI table
  */
 import React, { useState } from 'react';
 import { exportToCSV, exportToExcel, exportToPDF, filterByDateRange } from '../utils/exportUtils';
 
 const ExportToolbar = ({
   data,
+  prepareExportData = null,
   filename,
   title = 'Report',
   headers = null,
@@ -25,37 +26,40 @@ const ExportToolbar = ({
   const handleExport = async (format) => {
     let filteredData = data;
 
-    // Apply date range filter using hidden _sortDate field
-    if (startDate || endDate) {
-      filteredData = filterByDateRange(filteredData, startDate, endDate, '_sortDate');
+    // If parent UI is not managing the filter state, apply filters here
+    if (!onFilterChange) {
+      if (startDate || endDate) {
+        filteredData = filterByDateRange(filteredData, startDate, endDate, dateField);
+      }
+
+      if (searchTerm && showSearchFilter) {
+        const search = searchTerm.toLowerCase();
+        filteredData = filteredData.filter(item =>
+          Object.entries(item)
+            .filter(([key]) => key !== '_sortDate')
+            .some(([, val]) =>
+              String(val).toLowerCase().includes(search)
+            )
+        );
+      }
     }
 
-    // Apply search filter if applicable
-    if (searchTerm && showSearchFilter) {
-      const search = searchTerm.toLowerCase();
-      filteredData = filteredData.filter(item =>
-        Object.entries(item)
-          .filter(([key]) => key !== '_sortDate')
-          .some(([, val]) =>
-            String(val).toLowerCase().includes(search)
-          )
-      );
-    }
-
-    if (filteredData.length === 0) {
+    if (!filteredData || filteredData.length === 0) {
       alert('No data matches your current filters.');
       return;
     }
 
+    const formattedData = prepareExportData ? prepareExportData(filteredData) : filteredData;
+
     switch (format) {
       case 'csv':
-        exportToCSV(filteredData, filename);
+        exportToCSV(formattedData, filename);
         break;
       case 'excel':
-        await exportToExcel(filteredData, filename);
+        await exportToExcel(formattedData, filename);
         break;
       case 'pdf':
-        await exportToPDF(filteredData, filename, title, headers);
+        await exportToPDF(formattedData, filename, title, headers);
         break;
       default:
         break;
@@ -63,23 +67,21 @@ const ExportToolbar = ({
   };
 
   const handleApplyFilters = () => {
-    let filteredData = data;
-
-    if (startDate || endDate) {
-      filteredData = filterByDateRange(filteredData, startDate, endDate, dateField);
-    }
-
-    if (searchTerm && showSearchFilter) {
-      const search = searchTerm.toLowerCase();
-      filteredData = filteredData.filter(item =>
-        Object.values(item).some(val =>
-          String(val).toLowerCase().includes(search)
-        )
-      );
-    }
-
     if (onFilterChange) {
-      onFilterChange(filteredData);
+      onFilterChange({ startDate, endDate, searchTerm });
+    } else {
+      let filteredData = data;
+      if (startDate || endDate) {
+        filteredData = filterByDateRange(filteredData, startDate, endDate, dateField);
+      }
+      if (searchTerm && showSearchFilter) {
+        const search = searchTerm.toLowerCase();
+        filteredData = filteredData.filter(item =>
+          Object.values(item).some(val =>
+            String(val).toLowerCase().includes(search)
+          )
+        );
+      }
     }
   };
 
@@ -88,7 +90,7 @@ const ExportToolbar = ({
     setEndDate('');
     setSearchTerm('');
     if (onFilterChange) {
-      onFilterChange(data);
+      onFilterChange({ startDate: '', endDate: '', searchTerm: '' });
     }
   };
 
