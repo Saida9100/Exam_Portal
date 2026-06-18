@@ -146,18 +146,21 @@ const CreateExam = () => {
         ? `${description.trim()}\n[ScheduledStart: ${new Date(startTime).toISOString()}]`.trim()
         : description.trim();
 
+      const formattedDeadline = (showDeadline && deadline) ? new Date(deadline).toISOString().slice(0, 19).replace('T', ' ') : '';
+      const formattedStartTime = (schedulingMode === 'upcoming' && startTime) ? new Date(startTime).toISOString().slice(0, 19).replace('T', ' ') : '';
+
       const formData = new FormData();
       formData.append('title', title.trim());
       formData.append('description', finalDescription);
       formData.append('total_questions', parseInt(totalQuestions));
       formData.append('duration', parseInt(duration));
-      formData.append('deadline', (showDeadline && deadline) ? new Date(deadline).toISOString() : '');
+      formData.append('deadline', formattedDeadline);
       formData.append('pdf_file', pdfFile, pdfFile.name);
       formData.append('answer_key', JSON.stringify(answerKey));
 
-      if (schedulingMode === 'upcoming' && startTime) {
-        formData.append('start_time', new Date(startTime).toISOString());
-        formData.append('scheduled_at', new Date(startTime).toISOString());
+      if (formattedStartTime) {
+        formData.append('start_time', formattedStartTime);
+        formData.append('scheduled_at', formattedStartTime);
         formData.append('is_upcoming', 'true');
       }
 
