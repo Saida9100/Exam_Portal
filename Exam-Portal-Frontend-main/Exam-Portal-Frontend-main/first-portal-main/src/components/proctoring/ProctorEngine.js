@@ -31,8 +31,6 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
   const cocoModelRef = useRef(null);
 
   const [engineReady, setEngineReady] = useState(false);
-  const [showLoading, setShowLoading] = useState(true);
-  const [statusMsg, setStatusMsg] = useState('Initializing ML Engine...');
 
   // detection state refs
   const noFaceStartRef = useRef(Date.now());
@@ -46,7 +44,6 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
 
     (async () => {
       try {
-        setStatusMsg('Requesting Camera & Mic...');
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         if (!alive) { stream.getTracks().forEach(t => t.stop()); return; }
         streamRef.current = stream;
@@ -64,7 +61,6 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
         }
 
         // load models
-        setStatusMsg('Loading AI Models...');
         const promises = [];
 
         const cocoSsd = window.cocoSsd;
@@ -85,11 +81,9 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
 
         if (!alive) return;
         setEngineReady(true);
-        setStatusMsg('Engine Active');
         if (onReady) onReady();
       } catch (err) {
         console.error('Proctoring Engine Init Error:', err);
-        setStatusMsg('Error starting engine: ' + err.message);
       }
     })();
 
@@ -220,14 +214,6 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
     return () => { running = false; clearTimeout(timer); };
   }, [engineReady, isActive, detect]);
 
-  // hide loading overlay after 3 s
-  useEffect(() => {
-    if (engineReady) {
-      const t = setTimeout(() => setShowLoading(false), 3000);
-      return () => clearTimeout(t);
-    }
-  }, [engineReady]);
-
   // dev-tools detection (same as deployed code)
   useEffect(() => {
     const handler = () => {
@@ -243,41 +229,12 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
     return () => window.removeEventListener('resize', handler);
   }, [onViolation]);
 
-  /* ── Render: Live Proctoring widget (bottom-left, same as deployed) ── */
+  /* ── Render: Live Proctoring widget offscreen to inspect without showing video ── */
   if (!isActive) return null;
 
   return (
-    <div style={{
-      position: 'fixed', bottom: 20, left: 20, width: 200,
-      background: '#fff', borderRadius: 12,
-      boxShadow: '0 8px 30px rgba(0,0,0,0.15)', overflow: 'hidden',
-      zIndex: 9999, display: 'flex', flexDirection: 'column'
-    }}>
-      {/* header */}
-      <div style={{
-        background: '#2D0040', color: '#fff', padding: '6px 12px',
-        fontSize: 12, fontWeight: 600, display: 'flex', justifyContent: 'space-between'
-      }}>
-        <span>Live Proctoring</span>
-        {engineReady
-          ? <span style={{ color: '#4caf50' }}>● Active</span>
-          : <span style={{ color: '#ff9800' }}>● Loading</span>}
-      </div>
-
-      {/* video preview */}
-      <div style={{ position: 'relative', background: '#000', width: '100%', aspectRatio: '4/3' }}>
-        <video ref={videoRef} autoPlay muted playsInline
-          style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} />
-        {showLoading && (
-          <div style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0,
-            background: 'rgba(45,0,64,0.9)', color: '#fff',
-            padding: '6px 10px', fontSize: 11, textAlign: 'center'
-          }}>
-            {statusMsg}
-          </div>
-        )}
-      </div>
+    <div style={{ position: 'fixed', top: -9999, left: -9999, width: 640, height: 480, opacity: 0, pointerEvents: 'none', zIndex: -1 }}>
+      <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} />
     </div>
   );
 };
