@@ -3,7 +3,7 @@
 // ✅ COMPREHENSIVE LIVE-TESTING DIAGNOSTIC PAGE
 //
 // What it does:
-//   • Live camera preview with face-detection bounding box overlay
+//   • Live camera preview with face-detection bounding box overlay 
 //   • Real-time audio waveform & noise meter
 //   • Real-time lighting analysis (brightness, contrast, color temp)
 //   • Face detection confidence with history graph
