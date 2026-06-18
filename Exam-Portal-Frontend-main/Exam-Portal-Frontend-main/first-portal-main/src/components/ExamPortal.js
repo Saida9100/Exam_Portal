@@ -212,6 +212,7 @@ const ExamPortal = () => {
 
   const examList = getExamList();
   const ongoingCount = activeExams.length;
+  const upcomingCount = getUpcomingExams().length;
 
   const studentEmail = student?.email || 'Student';
   const studentName = student?.name || 'Student';
@@ -272,6 +273,24 @@ const ExamPortal = () => {
           </div>
         )}
 
+        {upcomingCount > 0 && activeTab !== 'upcoming' && (
+          <div className="upcoming-notification-banner" onClick={() => setActiveTab('upcoming')} style={{ background: '#fff8e1', border: '1px solid #ffe0b2', borderRadius: 12, padding: '14px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer', transition: 'all 0.2s', color: '#e65100', boxShadow: '0 2px 10px rgba(255,152,0,0.12)' }}>
+            <span style={{ fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 42, height: 42, background: '#ffcc80', borderRadius: '50%', color: '#fff', boxShadow: '0 2px 6px rgba(0,0,0,0.1)' }}>🔔</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>Upcoming Scheduled Exams</span>
+                <Badge bg="warning" text="dark" style={{ fontSize: 11, padding: '4px 8px', borderRadius: 12, fontWeight: 800, border: '1px solid #ff9800' }}>
+                  {upcomingCount} New
+                </Badge>
+              </div>
+              <div style={{ fontSize: 13, color: '#b26a00' }}>You have {upcomingCount} upcoming exam{upcomingCount > 1 ? 's' : ''} scheduled to open in the future. Click here to view start dates and opening times.</div>
+            </div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: '#e65100', background: '#ffe0b2', padding: '8px 16px', borderRadius: 10 }}>
+              View Upcoming →
+            </div>
+          </div>
+        )}
+
         <Nav variant="pills" className="exam-tab-pills mb-4" activeKey={activeTab}>
           <Nav.Item>
             <Nav.Link eventKey="ongoing" onClick={() => setActiveTab('ongoing')}>
@@ -280,8 +299,13 @@ const ExamPortal = () => {
             </Nav.Link>
           </Nav.Item>
           <Nav.Item className="ms-2">
-            <Nav.Link eventKey="upcoming" onClick={() => setActiveTab('upcoming')}>
-              Upcoming Exams
+            <Nav.Link eventKey="upcoming" onClick={() => setActiveTab('upcoming')} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>Upcoming Exams</span>
+              {upcomingCount > 0 && (
+                <Badge bg="warning" text="dark" pill style={{ fontWeight: 800, border: '1px solid #ff9800', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span>🔔</span> {upcomingCount}
+                </Badge>
+              )}
             </Nav.Link>
           </Nav.Item>
           <Nav.Item className="ms-2">
