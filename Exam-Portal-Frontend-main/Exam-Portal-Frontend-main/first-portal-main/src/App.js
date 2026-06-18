@@ -12,11 +12,11 @@ import {
   AdminDashboard, ManageExams, ViewResults, AdminSettings, ManageAdmins,
 } from './components/AdminDashboard';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
-import DeletionRequestsManager from './components/superadmin/DeletionRequestsManager';
+import DeletionRequestsManager from './components/DeletionRequestsManager';
 import DetectedStudents from './components/DetectedStudents';
 import ProtectedRoute from './components/ProtectedRoute';
 // ✅ NEW: live testing page
-import LiveTesting from './components/diagnostics/LiveTesting';
+import LiveTesting from './components/LiveTesting';
 import apiService from './services/api';
 
 import './App.css';
