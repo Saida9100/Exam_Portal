@@ -1,11 +1,10 @@
 // src/components/proctoring/PreExamCheck.js
-// ✅ FIXED: Face detection is no longer gated on camera-resolution lookup,
-//          the video element has proper attributes for autoplay,
-//          and a clear "I'm visible — proceed anyway" fallback exists.
+// ✅ ENHANCED: Added "🔬 Open Live Test in new tab" link so students
+//    can do a deep diagnostic if the inline check is failing.
+
 import React, { useState, useEffect, useRef } from 'react';
 import { cleanExamDescription } from '../../utils/exportUtils';
 
-// Reliable face-api model URLs (try in order)
 const FACE_MODEL_URL_PRIMARY =
   'https://justadudewhohacks.github.io/face-api.js/models';
 const FACE_MODEL_URL_FALLBACK =
@@ -21,19 +20,12 @@ const StatusBadge = ({ status, text }) => {
   };
   const s = cfg[status] || cfg.pending;
   return (
-    <span
-      style={{
-        background: s.bg,
-        color: s.color,
-        padding: '4px 10px',
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 700,
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-      }}
-    >
+    <span style={{
+      background: s.bg, color: s.color,
+      padding: '4px 10px', borderRadius: 999,
+      fontSize: 12, fontWeight: 700,
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+    }}>
       <span>{s.icon}</span>
       <span>{text}</span>
     </span>
@@ -46,7 +38,7 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
   const analyserRef = useRef(null);
   const scanTimerRef = useRef(null);
   const streamRef = useRef(null);
-  const faceApiLoadedRef = useRef(false); // ✅ FIX: per-instance flag, not global
+  const faceApiLoadedRef = useRef(false);
 
   const [camRes, setCamRes] = useState('');
   const [audioLevel, setAudioLevel] = useState(0);
@@ -64,7 +56,7 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
   const [agreedRules, setAgreedRules] = useState(false);
   const [manualOverride, setManualOverride] = useState(false);
 
-  // ── 1. Initialise Camera & Mic ──────────────────────────────
+  // 1. Initialise Camera & Mic
   useEffect(() => {
     let active = true;
 
@@ -76,52 +68,34 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
         setFaceStatus('check');
 
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            facingMode: 'user',
-          },
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
           audio: true,
         });
 
-        if (!active) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
+        if (!active) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          // ✅ FIX: Wait for actual frame data, with a hard fallback timeout
           await new Promise((resolve) => {
             const v = videoRef.current;
-            if (!v) return resolve();
-            if (v.readyState >= 2) return resolve();
-            const onLoaded = () => resolve();
-            v.addEventListener('loadeddata', onLoaded, { once: true });
+            if (!v || v.readyState >= 2) return resolve();
+            v.addEventListener('loadeddata', resolve, { once: true });
             setTimeout(resolve, 5000);
           });
-          try {
-            await videoRef.current.play();
-          } catch (e) {
-            console.warn('Video play() rejected (continuing):', e?.message);
-          }
+          try { await videoRef.current.play(); }
+          catch (e) { console.warn('Video play() rejected:', e?.message); }
         }
 
-        // ✅ FIX: don't gate camStatus on getSettings() — set good immediately
-        //          after the stream is attached and playing.
         try {
           const vt = stream.getVideoTracks()[0];
           if (vt) {
             const s = vt.getSettings();
             setCamRes(`${s.width || 640}x${s.height || 480}`);
           }
-        } catch (e) {
-          setCamRes('640x480');
-        }
+        } catch (e) { setCamRes('640x480'); }
         setCamStatus('good');
 
-        // Audio analyser
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (AudioCtx) {
           try {
@@ -131,21 +105,14 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
             src.connect(an);
             an.fftSize = 256;
             analyserRef.current = an;
-          } catch (e) {
-            console.warn('Audio analyser init failed:', e);
-          }
+          } catch (e) { console.warn('Audio analyser init failed:', e); }
         }
         setMicStatus('good');
 
-        // Show emergency override button after 5 s (in case AI models blocked)
-        setTimeout(() => {
-          if (active) setShowOverride(true);
-        }, 5000);
+        setTimeout(() => { if (active) setShowOverride(true); }, 5000);
       } catch (err) {
         console.error('Media start error:', err);
-        setErrorMsg(
-          'Camera or Microphone access denied. Please allow permissions in your browser settings and refresh the page.',
-        );
+        setErrorMsg('Camera or Microphone access denied. Please allow permissions in your browser settings and refresh the page.');
         setCamStatus('bad');
         setMicStatus('bad');
       }
@@ -159,7 +126,7 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
     };
   }, []);
 
-  // ── 2. Continuous Audio Meter ───────────────────────────────
+  // 2. Continuous Audio Meter
   useEffect(() => {
     if (!analyserRef.current) return undefined;
     const analyser = analyserRef.current;
@@ -172,9 +139,7 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
         let sum = 0;
         for (let i = 0; i < buf.length; i++) sum += buf[i];
         setAudioLevel(sum / buf.length);
-      } catch (e) {
-        /* ignore */
-      }
+      } catch (e) { /* ignore */ }
       animFrameRef.current = requestAnimationFrame(tick);
     };
     tick();
@@ -184,10 +149,7 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
     };
   }, []);
 
-  // ── 3. Lighting + Face scanner ──────────────────────────────
-  // ✅ FIX: this now runs whenever the stream is attached, NOT only when
-  //    camStatus === 'good'. The internal checks (videoWidth > 0) protect
-  //    against running on an empty stream.
+  // 3. Lighting + Face scanner
   useEffect(() => {
     let scanning = true;
 
@@ -199,11 +161,10 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
         return;
       }
 
-      // ── Lighting check ───────────────────────────────────────
+      // Lighting
       try {
         const c = document.createElement('canvas');
-        c.width = 80;
-        c.height = 60;
+        c.width = 80; c.height = 60;
         const ctx = c.getContext('2d');
         ctx.drawImage(v, 0, 0, 80, 60);
         const d = ctx.getImageData(0, 0, 80, 60).data;
@@ -212,13 +173,9 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
         const avgBright = s / (d.length / 4);
         setBrightness(avgBright);
         setLightStatus(avgBright > 20 ? 'good' : 'warn');
-      } catch (e) {
-        /* ignore */
-      }
+      } catch (e) { /* ignore */ }
 
-      // ── Face-API scan ────────────────────────────────────────
-      // ✅ FIX: per-instance ref instead of window.faceapiNetsLoaded,
-      //    and try fallback URL if primary fails.
+      // Face API scan
       if (window.faceapi && window.faceapi.nets && window.faceapi.nets.tinyFaceDetector) {
         try {
           if (!faceApiLoadedRef.current) {
@@ -233,10 +190,9 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
 
           const dets = await window.faceapi.detectAllFaces(
             v,
-            // ✅ FIX: more lenient threshold + smaller input for speed
             new window.faceapi.TinyFaceDetectorOptions({
               inputSize: 224,
-              scoreThreshold: 0.3, // was 0.25 — slightly higher to avoid noise but still permissive
+              scoreThreshold: 0.3,
             }),
           );
 
@@ -249,16 +205,11 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
             setFaceStatus('bad');
           }
         } catch (err) {
-          // ignore bad frame
+          // Ignore bad frame
         }
-      } else {
-        // face-api not loaded yet — show pending state
-        // don't set bad, just leave as pending
       }
 
-      if (scanning) {
-        scanTimerRef.current = setTimeout(scanFrame, 800);
-      }
+      if (scanning) scanTimerRef.current = setTimeout(scanFrame, 800);
     };
 
     scanFrame();
@@ -267,11 +218,10 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
       scanning = false;
       if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
     };
-  }, []); // ✅ FIX: empty deps — run once after stream is ready
+  }, []);
 
-  // ── 4. allReady derivation ──────────────────────────────────
+  // 4. allReady
   useEffect(() => {
-    // ✅ FIX: if user manually overrode, allow proceeding even if face not detected
     if (manualOverride) {
       setAllReady(true);
       return;
@@ -293,56 +243,34 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
     cleanExamDescription(exam?.description) ||
     'Please read all questions carefully before submitting.';
 
-  const handleManualOverride = () => {
-    setManualOverride(true);
-  };
+  const handleManualOverride = () => setManualOverride(true);
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #f5f7fb 0%, #e9ecf5 100%)',
-        padding: '24px 16px',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1100,
-          width: '100%',
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)',
-          gap: 20,
-        }}
-      >
-        {/* ── LEFT CARD: Instructions & Exam Overview ─────────────── */}
-        <div
-          style={{
-            background: '#fff',
-            borderRadius: 16,
-            padding: 28,
-            boxShadow: '0 4px 24px rgba(91,10,123,0.08)',
-            border: '1px solid #ece9f4',
-          }}
-        >
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #f5f7fb 0%, #e9ecf5 100%)',
+      padding: '24px 16px',
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+    }}>
+      <div style={{
+        maxWidth: 1100, width: '100%',
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)',
+        gap: 20,
+      }}>
+        {/* LEFT CARD */}
+        <div style={{
+          background: '#fff', borderRadius: 16, padding: 28,
+          boxShadow: '0 4px 24px rgba(91,10,123,0.08)',
+          border: '1px solid #ece9f4',
+        }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: 12,
-                background: 'linear-gradient(135deg, #5B0A7B, #7B1FA2)',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 24,
-              }}
-            >
-              🎓
-            </div>
+            <div style={{
+              width: 48, height: 48, borderRadius: 12,
+              background: 'linear-gradient(135deg, #5B0A7B, #7B1FA2)',
+              color: '#fff', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 24,
+            }}>🎓</div>
             <div>
               <h2 style={{ margin: 0, color: '#2c2c54', fontSize: 22, fontWeight: 700 }}>
                 {displayTitle}
@@ -353,251 +281,119 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
             </div>
           </div>
 
-          {/* Pills */}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '18px 0' }}>
-            <div
-              style={{
-                background: '#f3eafd',
-                color: '#5B0A7B',
-                padding: '8px 14px',
-                borderRadius: 10,
-                fontSize: 12,
-                fontWeight: 700,
-                letterSpacing: 0.5,
-              }}
-            >
+            <div style={{ background: '#f3eafd', color: '#5B0A7B', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700, letterSpacing: 0.5 }}>
               QUESTIONS: <span style={{ marginLeft: 6 }}>{displayQuestionsCount}</span>
             </div>
-            <div
-              style={{
-                background: '#fff3e0',
-                color: '#e65100',
-                padding: '8px 14px',
-                borderRadius: 10,
-                fontSize: 12,
-                fontWeight: 700,
-                letterSpacing: 0.5,
-              }}
-            >
+            <div style={{ background: '#fff3e0', color: '#e65100', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700, letterSpacing: 0.5 }}>
               DURATION: <span style={{ marginLeft: 6 }}>{displayDuration}</span>
             </div>
-            <div
-              style={{
-                background: '#e8f5e9',
-                color: '#2e7d32',
-                padding: '8px 14px',
-                borderRadius: 10,
-                fontSize: 12,
-                fontWeight: 700,
-                letterSpacing: 0.5,
-              }}
-            >
+            <div style={{ background: '#e8f5e9', color: '#2e7d32', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700, letterSpacing: 0.5 }}>
               PROCTORING: <span style={{ marginLeft: 6 }}>Strict AI</span>
             </div>
           </div>
 
-          <div
-            style={{
-              background: '#faf8ff',
-              border: '1px solid #ece9f4',
-              borderRadius: 12,
-              padding: '14px 16px',
-              fontSize: 14,
-              color: '#444',
-              lineHeight: 1.6,
-            }}
-          >
+          <div style={{
+            background: '#faf8ff', border: '1px solid #ece9f4',
+            borderRadius: 12, padding: '14px 16px',
+            fontSize: 14, color: '#444', lineHeight: 1.6,
+          }}>
             <strong>📋 Overview:</strong> {displayDesc}
           </div>
 
-          <h4
-            style={{
-              color: '#c62828',
-              fontSize: 15,
-              marginTop: 24,
-              marginBottom: 12,
-              fontWeight: 700,
-            }}
-          >
+          <h4 style={{ color: '#c62828', fontSize: 15, marginTop: 24, marginBottom: 12, fontWeight: 700 }}>
             ⚠️ Strict Rules & Guidelines
           </h4>
           <ul style={{ paddingLeft: 18, color: '#444', fontSize: 13.5, lineHeight: 1.7 }}>
-            <li>
-              <strong>Face Visibility Required:</strong> Keep your face clearly centered in
-              the camera frame. Covering your camera or looking away will halt the exam.
-            </li>
-            <li>
-              <strong>No Tab / Window Switching:</strong> Navigating away from the active
-              exam window or opening other software will trigger instant warnings and
-              auto-submit.
-            </li>
-            <li>
-              <strong>No Electronic Devices:</strong> Mobile phones, smartwatches, textbooks,
-              or unauthorized secondary screens are strictly prohibited.
-            </li>
-            <li>
-              <strong>Quiet Environment:</strong> Maintain a silent room. Secondary talking
-              or multiple voices will be logged as critical violations.
-            </li>
-            <li>
-              <strong>Final Performance:</strong> Once you click submit or the timer expires,
-              your responses are permanently recorded.
-            </li>
+            <li><strong>Face Visibility Required:</strong> Keep your face clearly centered in the camera frame.</li>
+            <li><strong>No Tab / Window Switching:</strong> Triggers instant warnings and auto-submit.</li>
+            <li><strong>No Electronic Devices:</strong> Mobile phones, smartwatches, etc. are prohibited.</li>
+            <li><strong>Quiet Environment:</strong> Maintain a silent room.</li>
+            <li><strong>Final Performance:</strong> Once submitted, your responses are permanently recorded.</li>
           </ul>
 
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 10,
-              marginTop: 20,
-              padding: '12px 14px',
-              background: agreedRules ? '#e8f5e9' : '#fafafa',
-              border: `1.5px solid ${agreedRules ? '#66bb6a' : '#e0e0e0'}`,
-              borderRadius: 10,
-              cursor: 'pointer',
-              fontSize: 13.5,
-              color: '#444',
-              transition: 'all 0.2s',
-            }}
-          >
+          <label style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+            marginTop: 20, padding: '12px 14px',
+            background: agreedRules ? '#e8f5e9' : '#fafafa',
+            border: `1.5px solid ${agreedRules ? '#66bb6a' : '#e0e0e0'}`,
+            borderRadius: 10, cursor: 'pointer', fontSize: 13.5, color: '#444',
+            transition: 'all 0.2s',
+          }}>
             <input
               type="checkbox"
               checked={agreedRules}
               onChange={(e) => setAgreedRules(e.target.checked)}
               style={{ width: 22, height: 22, cursor: 'pointer', accentColor: '#15803d', flexShrink: 0, marginTop: 2 }}
             />
-            <span>
-              I have read, understood, and agree to follow all exam rules and proctoring
-              policies.
-            </span>
+            <span>I have read, understood, and agree to follow all exam rules and proctoring policies.</span>
           </label>
         </div>
 
-        {/* ── RIGHT CARD: Pre-Exam Tech Check ─────────────────────── */}
-        <div
-          style={{
-            background: '#fff',
-            borderRadius: 16,
-            padding: 28,
-            boxShadow: '0 4px 24px rgba(91,10,123,0.08)',
-            border: '1px solid #ece9f4',
-          }}
-        >
+        {/* RIGHT CARD */}
+        <div style={{
+          background: '#fff', borderRadius: 16, padding: 28,
+          boxShadow: '0 4px 24px rgba(91,10,123,0.08)',
+          border: '1px solid #ece9f4',
+        }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 10,
-                background: '#ede7f6',
-                color: '#5B0A7B',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 20,
-              }}
-            >
-              🛡️
-            </div>
+            <div style={{
+              width: 40, height: 40, borderRadius: 10,
+              background: '#ede7f6', color: '#5B0A7B',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 20,
+            }}>🛡️</div>
             <h3 style={{ margin: 0, color: '#2c2c54', fontSize: 19, fontWeight: 700 }}>
               Pre-Exam Tech Check
             </h3>
           </div>
 
-          {/* ── Live Camera Box ──────────────────────────────────── */}
-          <div
-            style={{
-              position: 'relative',
-              borderRadius: 14,
-              overflow: 'hidden',
-              background: '#0a0a14',
-              aspectRatio: '4 / 3',
-              border: '2px solid #ece9f4',
-            }}
-          >
+          {/* Live Camera Box */}
+          <div style={{
+            position: 'relative', borderRadius: 14, overflow: 'hidden',
+            background: '#0a0a14', aspectRatio: '4 / 3',
+            border: '2px solid #ece9f4',
+          }}>
             <video
               ref={videoRef}
-              autoPlay
-              muted
-              playsInline
+              autoPlay muted playsInline
               onClick={() => videoRef.current?.play()}
               style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                transform: 'scaleX(-1)', // mirror for selfie view
-                background: '#0a0a14',
+                width: '100%', height: '100%', objectFit: 'cover',
+                transform: 'scaleX(-1)', background: '#0a0a14',
               }}
             />
-
-            {/* LIVE badge */}
-            <div
-              style={{
-                position: 'absolute',
-                top: 10,
-                left: 10,
-                background: 'rgba(229,57,53,0.92)',
-                color: '#fff',
-                padding: '4px 10px',
-                borderRadius: 6,
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: 1,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-              }}
-            >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: '#fff',
-                  animation: 'pulse 1.5s infinite',
-                }}
-              />
+            <div style={{
+              position: 'absolute', top: 10, left: 10,
+              background: 'rgba(229,57,53,0.92)', color: '#fff',
+              padding: '4px 10px', borderRadius: 6,
+              fontSize: 11, fontWeight: 700, letterSpacing: 1,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: '#fff', animation: 'pulse 1.5s infinite',
+              }} />
               LIVE PROCTOR
             </div>
-
-            {/* Face target frame overlay */}
-            <div
-              style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: '55%',
-                aspectRatio: '3 / 4',
-                border: `2px dashed ${
-                  faceStatus === 'good'
-                    ? 'rgba(76,175,80,0.7)'
-                    : faceStatus === 'bad'
-                    ? 'rgba(229,57,53,0.7)'
-                    : 'rgba(255,255,255,0.5)'
-                }`,
-                borderRadius: '50% 50% 45% 45% / 60% 60% 40% 40%',
-                pointerEvents: 'none',
-                transition: 'border-color 0.3s',
-              }}
-            />
-
-            {/* Center status message */}
-            <div
-              style={{
-                position: 'absolute',
-                bottom: 10,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                background: 'rgba(0,0,0,0.6)',
-                color: '#fff',
-                padding: '6px 12px',
-                borderRadius: 999,
-                fontSize: 12,
-                fontWeight: 600,
-              }}
-            >
+            <div style={{
+              position: 'absolute', top: '50%', left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '55%', aspectRatio: '3 / 4',
+              border: `2px dashed ${
+                faceStatus === 'good' ? 'rgba(76,175,80,0.7)' :
+                faceStatus === 'bad' ? 'rgba(229,57,53,0.7)' :
+                'rgba(255,255,255,0.5)'
+              }`,
+              borderRadius: '50% 50% 45% 45% / 60% 60% 40% 40%',
+              pointerEvents: 'none', transition: 'border-color 0.3s',
+            }} />
+            <div style={{
+              position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(0,0,0,0.6)', color: '#fff',
+              padding: '6px 12px', borderRadius: 999,
+              fontSize: 12, fontWeight: 600,
+            }}>
               {camStatus === 'pending' && 'Initializing Camera…'}
               {camStatus === 'check' && 'Connecting…'}
               {camStatus === 'good' && faceStatus === 'good' && '✓ Face Detected'}
@@ -605,153 +401,77 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
               {camStatus === 'good' && faceStatus === 'pending' && 'Scanning…'}
               {camStatus === 'bad' && '❌ Camera Error'}
             </div>
-
-            {/* Resolution */}
             {camRes && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 10,
-                  right: 10,
-                  background: 'rgba(0,0,0,0.5)',
-                  color: '#fff',
-                  padding: '3px 8px',
-                  borderRadius: 4,
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                }}
-              >
-                {camRes}
-              </div>
+              <div style={{
+                position: 'absolute', top: 10, right: 10,
+                background: 'rgba(0,0,0,0.5)', color: '#fff',
+                padding: '3px 8px', borderRadius: 4,
+                fontSize: 11, fontFamily: 'monospace',
+              }}>{camRes}</div>
             )}
           </div>
 
-          {/* ── 2x2 Quality grid ─────────────────────────────────── */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 10,
-              marginTop: 14,
-            }}
-          >
-            <div
-              style={{
-                background: '#fafafa',
-                border: '1px solid #ececec',
-                borderRadius: 10,
-                padding: '10px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-              }}
-            >
-              <div style={{ fontSize: 20 }}>📸</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>Camera</div>
-                <StatusBadge
-                  status={camStatus}
-                  text={camStatus === 'good' ? 'Connected' : camStatus === 'bad' ? 'Error' : '…'}
-                />
+          {/* Quality grid */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14,
+          }}>
+            {[
+              { icon: '📸', label: 'Camera', status: camStatus, val: camStatus === 'good' ? 'Connected' : camStatus === 'bad' ? 'Error' : '…' },
+              { icon: '🎙️', label: 'Microphone', status: micStatus, val: `Vol: ${audioPct}%` },
+              { icon: '💡', label: 'Lighting', status: lightStatus, val: `Bright: ${brightPct}%` },
+              { icon: '👤', label: 'Face Visible', status: faceStatus, val: faceConf > 0 ? `Conf: ${faceConf}%` : faceStatus === 'bad' ? 'Not Detected' : '…' },
+            ].map((q, i) => (
+              <div key={i} style={{
+                background: '#fafafa', border: '1px solid #ececec',
+                borderRadius: 10, padding: '10px 12px',
+                display: 'flex', alignItems: 'center', gap: 10,
+              }}>
+                <div style={{ fontSize: 20 }}>{q.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>{q.label}</div>
+                  <StatusBadge status={q.status} text={q.val} />
+                </div>
               </div>
-            </div>
-
-            <div
-              style={{
-                background: '#fafafa',
-                border: '1px solid #ececec',
-                borderRadius: 10,
-                padding: '10px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-              }}
-            >
-              <div style={{ fontSize: 20 }}>🎙️</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>Microphone</div>
-                <StatusBadge
-                  status={micStatus}
-                  text={`Vol: ${audioPct}%`}
-                />
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: '#fafafa',
-                border: '1px solid #ececec',
-                borderRadius: 10,
-                padding: '10px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-              }}
-            >
-              <div style={{ fontSize: 20 }}>💡</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>Lighting</div>
-                <StatusBadge
-                  status={lightStatus}
-                  text={`Bright: ${brightPct}%`}
-                />
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: '#fafafa',
-                border: '1px solid #ececec',
-                borderRadius: 10,
-                padding: '10px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-              }}
-            >
-              <div style={{ fontSize: 20 }}>👤</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>Face Visible</div>
-                <StatusBadge
-                  status={faceStatus}
-                  text={faceConf > 0 ? `Conf: ${faceConf}%` : faceStatus === 'bad' ? 'Not Detected' : '…'}
-                />
-              </div>
-            </div>
+            ))}
           </div>
 
+          {/* ✅ NEW: Link to full diagnostic */}
+          <a
+            href="/live-testing"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginTop: 14, padding: '10px 14px',
+              background: '#f3eafd', color: '#5B0A7B',
+              border: '1px solid #d1b3ed', borderRadius: 10,
+              fontSize: 13, fontWeight: 600, textDecoration: 'none',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#ede0fa'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#f3eafd'}
+          >
+            <span>🔬 Open Full Live Diagnostic Test (new tab)</span>
+            <span>↗</span>
+          </a>
+
           {errorMsg && (
-            <div
-              style={{
-                marginTop: 14,
-                background: '#ffebee',
-                color: '#c62828',
-                padding: '10px 14px',
-                borderRadius: 10,
-                fontSize: 13,
-                border: '1px solid #ffcdd2',
-              }}
-            >
-              {errorMsg}
-            </div>
+            <div style={{
+              marginTop: 14, background: '#ffebee', color: '#c62828',
+              padding: '10px 14px', borderRadius: 10, fontSize: 13,
+              border: '1px solid #ffcdd2',
+            }}>{errorMsg}</div>
           )}
 
-          {/* ── Manual override (always available) ──────────────── */}
           {(showOverride || faceStatus === 'bad') && !manualOverride && (
             <button
               onClick={handleManualOverride}
               style={{
-                marginTop: 14,
-                width: '100%',
-                background: '#fff8e1',
-                color: '#e65100',
-                border: '1px solid #ffe0b2',
-                borderRadius: 10,
-                padding: '10px 14px',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
-                textAlign: 'left',
+                marginTop: 14, width: '100%',
+                background: '#fff8e1', color: '#e65100',
+                border: '1px solid #ffe0b2', borderRadius: 10,
+                padding: '10px 14px', fontSize: 13, fontWeight: 600,
+                cursor: 'pointer', textAlign: 'left',
               }}
             >
               ⚠️ Tech check struggling or AI blocked? Click here to{' '}
@@ -760,42 +480,28 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
           )}
 
           {manualOverride && (
-            <div
-              style={{
-                marginTop: 14,
-                background: '#fff3e0',
-                color: '#e65100',
-                padding: '10px 14px',
-                borderRadius: 10,
-                fontSize: 12,
-                border: '1px solid #ffe0b2',
-              }}
-            >
-              ✓ Manual override accepted. The proctoring engine will still monitor your
-              session during the exam.
+            <div style={{
+              marginTop: 14, background: '#fff3e0', color: '#e65100',
+              padding: '10px 14px', borderRadius: 10, fontSize: 12,
+              border: '1px solid #ffe0b2',
+            }}>
+              ✓ Manual override accepted. The proctoring engine will still monitor your session during the exam.
             </div>
           )}
 
-          {/* ── Master Start Button ──────────────────────────────── */}
           <button
             onClick={onComplete}
             disabled={!allReady || !agreedRules}
             style={{
-              marginTop: 18,
-              width: '100%',
-              background:
-                allReady && agreedRules
-                  ? 'linear-gradient(135deg, #5B0A7B, #7B1FA2)'
-                  : '#e0e0e0',
+              marginTop: 18, width: '100%',
+              background: allReady && agreedRules
+                ? 'linear-gradient(135deg, #5B0A7B, #7B1FA2)'
+                : '#e0e0e0',
               color: allReady && agreedRules ? '#fff' : '#888',
-              border: 'none',
-              borderRadius: 12,
-              padding: '14px 24px',
-              fontSize: 16,
-              fontWeight: 700,
+              border: 'none', borderRadius: 12,
+              padding: '14px 24px', fontSize: 16, fontWeight: 700,
               cursor: allReady && agreedRules ? 'pointer' : 'not-allowed',
-              transition: 'all 0.2s',
-              letterSpacing: 0.3,
+              transition: 'all 0.2s', letterSpacing: 0.3,
             }}
           >
             {allReady && agreedRules
