@@ -2,7 +2,7 @@
 // ✅ ENHANCED: Added "🔬 Open Live Test in new tab" link so students
 //    can do a deep diagnostic if the inline check is failing.
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; 
 import { cleanExamDescription } from '../../utils/exportUtils';
 
 const FACE_MODEL_URL_PRIMARY =
