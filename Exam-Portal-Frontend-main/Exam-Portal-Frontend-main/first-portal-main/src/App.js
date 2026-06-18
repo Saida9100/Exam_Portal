@@ -1,5 +1,4 @@
-// src/App.js
-// ✅ ADDED: route for /superadmin/deletion-requests
+// src/App.js — ADD route for /live-testing
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './components/LoginPage';
@@ -13,10 +12,11 @@ import {
   AdminDashboard, ManageExams, ViewResults, AdminSettings, ManageAdmins,
 } from './components/AdminDashboard';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
-// ✅ NEW: dedicated deletion-requests page
 import DeletionRequestsManager from './components/superadmin/DeletionRequestsManager';
 import DetectedStudents from './components/DetectedStudents';
 import ProtectedRoute from './components/ProtectedRoute';
+// ✅ NEW: live testing page
+import LiveTesting from './components/diagnostics/LiveTesting';
 import apiService from './services/api';
 
 import './App.css';
@@ -77,6 +77,8 @@ function App() {
         <Route path="/exam/:examId" element={<ProtectedRoute><ExamDashboard /></ProtectedRoute>} />
         <Route path="/results" element={<ProtectedRoute><ResultPage /></ProtectedRoute>} />
         <Route path="/result/:attemptId" element={<ProtectedRoute><ResultPage /></ProtectedRoute>} />
+        {/* ✅ NEW: Live Testing (accessible by any authenticated user) */}
+        <Route path="/live-testing" element={<ProtectedRoute><LiveTesting /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
         <Route path="/admin/exams" element={<ProtectedRoute><ManageExams /></ProtectedRoute>} />
         <Route path="/admin/create" element={<ProtectedRoute><CreateExam /></ProtectedRoute>} />
