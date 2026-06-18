@@ -151,7 +151,7 @@ const CreateExam = () => {
       formData.append('description', finalDescription);
       formData.append('total_questions', parseInt(totalQuestions));
       formData.append('duration', parseInt(duration));
-      formData.append('deadline', showDeadline ? deadline : '');
+      formData.append('deadline', (showDeadline && deadline) ? new Date(deadline).toISOString() : '');
       formData.append('pdf_file', pdfFile, pdfFile.name);
       formData.append('answer_key', JSON.stringify(answerKey));
 
