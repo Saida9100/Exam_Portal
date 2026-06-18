@@ -386,14 +386,17 @@ const CreateExam = () => {
         ? `${description.trim()}\n[ScheduledStart: ${new Date(startTime).toISOString()}]`.trim()
         : description.trim() || null;
 
+      const formattedDeadline = deadline ? new Date(deadline).toISOString().slice(0, 19).replace('T', ' ') : null;
+      const formattedStartTime = startTime ? new Date(startTime).toISOString().slice(0, 19).replace('T', ' ') : null;
+
       const examData = {
         title: title.trim(),
         description: finalDescription,
         total_questions: parseInt(totalQuestions),
         duration: parseInt(duration),
-        deadline: deadline || null,
-        start_time: startTime || null,
-        scheduled_at: startTime || null,
+        deadline: formattedDeadline,
+        start_time: formattedStartTime,
+        scheduled_at: formattedStartTime,
       };
 
       if (admin?.role === 'super_admin') {
