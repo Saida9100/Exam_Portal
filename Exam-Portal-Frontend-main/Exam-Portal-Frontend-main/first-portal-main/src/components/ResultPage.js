@@ -20,6 +20,7 @@ const ResultPage = () => {
 
   const [result, setResult] = useState(null);
   const [allResults, setAllResults] = useState([]);
+  const [examDeadline, setExamDeadline] = useState(null);
   const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -74,6 +75,39 @@ const ResultPage = () => {
         }
       }
 
+      // Find exact exam deadline to lock detailed answer key if active
+      let fetchedDeadline = resultData.deadline || resultData.exam?.deadline || resultData.exam_deadline || null;
+
+      if (!fetchedDeadline && resultData.exam_id) {
+        try {
+          const qData = await apiService.getExamQuestions(resultData.exam_id);
+          if (qData && qData.exam && qData.exam.deadline) {
+            fetchedDeadline = qData.exam.deadline;
+          }
+        } catch (err) { console.warn("Could not fetch by exam_id", err); }
+      }
+
+      if (!fetchedDeadline && resultData.exam_code) {
+        try {
+          const cData = await apiService.getExamByCode(resultData.exam_code);
+          if (cData && cData.exam && cData.exam.deadline) {
+            fetchedDeadline = cData.exam.deadline;
+          }
+        } catch (err) { console.warn("Could not fetch by code", err); }
+      }
+
+      if (!fetchedDeadline) {
+        try {
+          const allExamsData = await apiService.getExams();
+          const list = allExamsData?.exams || allExamsData || [];
+          const found = list.find(e => String(e.id) === String(resultData.exam_id) || (e.title && e.title === resultData.exam_title));
+          if (found && found.deadline) {
+            fetchedDeadline = found.deadline;
+          }
+        } catch (err) { console.warn("Could not match from list", err); }
+      }
+
+      setExamDeadline(fetchedDeadline);
       setResult(resultData);
     } catch (err) {
       setError(err.message || 'Failed to fetch results');
@@ -99,10 +133,16 @@ const ResultPage = () => {
 
   const finalAllResults = filterByDateRange(allResults, exportFilters.startDate, exportFilters.endDate, 'submitted_at');
 
+  const isAnswerKeyLocked = examDeadline && new Date(examDeadline) > new Date();
+
   // ─── Download Answer Key ─────────────────────────────────────────────────
 
   const downloadAnswerKey = () => {
     if (!result) return;
+    if (isAnswerKeyLocked) {
+      alert("Answer Key is locked to prevent leaking answers while the exam is still active. Please check back after the exam deadline.");
+      return;
+    }
 
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
@@ -231,6 +271,10 @@ const ResultPage = () => {
 
   const printReport = () => {
     if (!result) return;
+    if (isAnswerKeyLocked) {
+      alert("Result report is locked to prevent leaking answers while the exam is still active. Please check back after the exam deadline.");
+      return;
+    }
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
     const w = window.open('', '_blank');
@@ -519,32 +563,53 @@ const ResultPage = () => {
           </div>
           {/* Note */}
           <p style={{ textAlign:'center', fontSize:13, color:'#888', marginBottom:24 }}>
-            Detailed answer breakdown is available in the downloaded report.
+            Detailed answer breakdown is available after the exam deadline.
           </p>
 
-          {/* Action Buttons */}
-          <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center' }}>
-            <Button
-              onClick={() => navigate('/dashboard')}
-              style={{ background:'linear-gradient(135deg,#667eea,#764ba2)', border:'none', borderRadius:10, padding:'10px 22px', fontWeight:600, fontSize:14 }}
-            >
-              Back to Dashboard
-            </Button>
-            <Button
-              variant="outline-success"
-              onClick={downloadAnswerKey}
-              style={{ borderRadius:10, padding:'10px 22px', fontWeight:600, fontSize:14 }}
-            >
-              Download Answer Key
-            </Button>
-            <Button
-              variant="outline-secondary"
-              onClick={printReport}
-              style={{ borderRadius:10, padding:'10px 22px', fontWeight:600, fontSize:14 }}
-            >
-              Print Report
-            </Button>
-          </div>
+          {/* Action Buttons / Locked Notice */}
+          {isAnswerKeyLocked ? (
+            <div style={{ textAlign: 'center', background: '#fff3e0', border: '2px solid #ff9800', borderRadius: 12, padding: 24, marginTop: 12 }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>🔒</div>
+              <h5 style={{ fontWeight: 700, color: '#e65100', margin: '0 0 8px' }}>Answer Key & Detailed Report Locked</h5>
+              <p style={{ color: '#856404', fontSize: 13, margin: '0 0 16px', lineHeight: 1.5 }}>
+                To maintain academic integrity and prevent answer leaks while the exam is still active, detailed answer breakdowns are locked until the deadline passes.
+              </p>
+              <div style={{ display: 'inline-block', background: '#ffe0b2', color: '#e65100', padding: '6px 16px', borderRadius: 20, fontSize: 12, fontWeight: 700, marginBottom: 20 }}>
+                ⏳ Releases after: {new Date(examDeadline).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </div>
+              <div>
+                <Button
+                  onClick={() => navigate('/dashboard')}
+                  style={{ background: 'linear-gradient(135deg,#667eea,#764ba2)', border: 'none', borderRadius: 10, padding: '11px 28px', fontWeight: 600, fontSize: 14 }}
+                >
+                  Back to Dashboard
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center' }}>
+              <Button
+                onClick={() => navigate('/dashboard')}
+                style={{ background:'linear-gradient(135deg,#667eea,#764ba2)', border:'none', borderRadius:10, padding:'10px 22px', fontWeight:600, fontSize:14 }}
+              >
+                Back to Dashboard
+              </Button>
+              <Button
+                variant="outline-success"
+                onClick={downloadAnswerKey}
+                style={{ borderRadius:10, padding:'10px 22px', fontWeight:600, fontSize:14 }}
+              >
+                Download Answer Key
+              </Button>
+              <Button
+                variant="outline-secondary"
+                onClick={printReport}
+                style={{ borderRadius:10, padding:'10px 22px', fontWeight:600, fontSize:14 }}
+              >
+                Print Report
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>
