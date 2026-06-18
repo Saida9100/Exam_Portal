@@ -442,7 +442,7 @@ const ExamDashboard = () => {
 
   // Pre-exam Environment Check
   if (!preCheckPassed) {
-    return <PreExamCheck onComplete={() => setPreCheckPassed(true)} examTitle={exam?.title || 'Exam'} />;
+    return <PreExamCheck onComplete={() => setPreCheckPassed(true)} examTitle={exam?.title || 'Exam'} exam={exam} totalQ={totalQ} />;
   }
 
   if (!exam) {
