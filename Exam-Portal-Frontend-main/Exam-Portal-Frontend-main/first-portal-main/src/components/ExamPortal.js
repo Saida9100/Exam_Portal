@@ -417,8 +417,9 @@ const ExamPortal = () => {
                     </div>
 
                     {(() => {
+                      if (activeTab !== 'upcoming') return null;
                       const startTime = parseExamStartTime(exam);
-                      if (!startTime) return null;
+                      if (!startTime || startTime <= new Date()) return null;
                       return (
                         <div style={{
                           marginTop: 12,
