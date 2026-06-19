@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import apiService from '../services/api';
 
 const Sidebar = ({ active }) => {
-  const navigate = useNavigate();
+  const navigate = useNavigate(); 
   const user = apiService.getUser();
 
   const [showPwModal, setShowPwModal] = useState(false);
