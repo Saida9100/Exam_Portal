@@ -14,7 +14,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Modal, Button } from 'react-bootstrap';
-import apiService from '../../services/api';
+import apiService from '../services/api';
 import SharedAdminSidebar from '../SharedAdminSidebar';
 
 const TYPE_META = {
