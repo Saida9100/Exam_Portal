@@ -37,9 +37,19 @@ const CONFIG = {
   multiPersonFrames: 5,             // frames needed before "multiple person" (was 8)
   scoreThreshold: 0.4,              // face-api confidence (was 0.5)
   inputSize: 320,                   // 416 was slow; 320 is a good speed/accuracy trade-off
-  objectConfidence: 0.6,            // coco-ssd phone confidence (was 0.66)
+  objectConfidence: 0.55,           // phone confidence; slightly forgiving for better capture
   audioAvgThreshold: 120,           // raw 0-255 audio threshold (was 100)
   violationCooldownMs: 15000,       // 15 s between violations of same type
+};
+
+const ILLEGAL_OBJECT_LABELS = new Set([
+  'cell phone',
+  'book',
+]);
+
+const formatIllegalObject = (label) => {
+  if (label === 'cell phone') return 'mobile phone';
+  return label;
 };
 
 const ProctorEngine = ({ onViolation, isActive, onReady }) => {
@@ -185,8 +195,14 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
       const c = document.createElement('canvas');
       c.width = v.videoWidth;
       c.height = v.videoHeight;
-      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-      return c.toDataURL('image/jpeg', 0.5);
+      const ctx = c.getContext('2d');
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.fillRect(0, c.height - 34, c.width, 34);
+      ctx.fillStyle = '#fff';
+      ctx.font = '16px Arial, sans-serif';
+      ctx.fillText(`ExamPortal violation snapshot • ${new Date().toLocaleString()}`, 12, c.height - 12);
+      return c.toDataURL('image/jpeg', 0.72);
     } catch (e) {
       return null;
     }
@@ -272,15 +288,15 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
       if (cocoModel) {
         try {
           const preds = await cocoModel.detect(video);
-          const phoneFound = preds.some(
-            (p) =>
-              p.class === 'cell phone' && p.score >= CONFIG.objectConfidence,
-          );
-          if (phoneFound) {
+          const illegal = preds
+            .filter((p) => ILLEGAL_OBJECT_LABELS.has(p.class) && p.score >= CONFIG.objectConfidence)
+            .sort((a, b) => b.score - a.score)[0];
+          if (illegal) {
+            const itemName = formatIllegalObject(illegal.class);
             fireViolation(
-              'Mobile Phone Detection',
+              illegal.class === 'cell phone' ? 'Mobile Phone Detection' : 'Illegal Item Detection',
               'Critical',
-              'A mobile phone was detected in your camera view.',
+              `Illegal item detected: ${itemName} (${Math.round((illegal.score || 0) * 100)}% confidence). Snapshot captured and sent to admin.`,
             );
           }
           personCount = preds.filter(
