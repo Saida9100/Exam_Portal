@@ -12,7 +12,7 @@
 //      • Type, target, requester, reason, timestamp
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom'; 
 import { Modal, Button } from 'react-bootstrap';
 import apiService from '../services/api';
 import SharedAdminSidebar from './SharedAdminSidebar';
