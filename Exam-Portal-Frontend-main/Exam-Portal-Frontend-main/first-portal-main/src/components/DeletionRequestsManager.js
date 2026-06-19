@@ -15,7 +15,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Modal, Button } from 'react-bootstrap';
 import apiService from '../services/api';
-import SharedAdminSidebar from '../SharedAdminSidebar';
+import SharedAdminSidebar from './SharedAdminSidebar';;
 
 const TYPE_META = {
   student: { label: 'Student', icon: '👤', color: '#1565c0', bg: '#e3f2fd' },
