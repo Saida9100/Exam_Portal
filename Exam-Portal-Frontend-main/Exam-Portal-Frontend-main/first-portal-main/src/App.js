@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './components/LoginPage';
-import Dashboard from './components/Dashboard'; 
+import Dashboard from './components/Dashboard';
 import ExamPortal from './components/ExamPortal';
 import ExamDashboard from './components/ExamDashboard';
 import ResultPage from './components/ResultPage';
@@ -181,6 +181,16 @@ function App() {
         <Route path="/superadmin/create" element={
           <ProtectedRoute allowedRoles={['super_admin']}>
             <CreateExam />
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/results" element={
+          <ProtectedRoute allowedRoles={['super_admin']}>
+            <ViewResults />
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/settings" element={
+          <ProtectedRoute allowedRoles={['super_admin']}>
+            <AdminSettings />
           </ProtectedRoute>
         } />
         <Route path="/superadmin/detected-students" element={
