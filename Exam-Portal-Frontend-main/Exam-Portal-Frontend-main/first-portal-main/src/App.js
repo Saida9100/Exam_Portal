@@ -8,7 +8,7 @@ import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 import ExamPortal from './components/ExamPortal';
 import ExamDashboard from './components/ExamDashboard';
-import ResultPage from './components/ResultPage'; 
+import ResultPage from './components/ResultPage';
 import CreateExam from './components/CreateExam';
 import StudentManagement from './components/StudentManagement';
 import {
@@ -18,7 +18,6 @@ import SuperAdminDashboard from './components/SuperAdminDashboard';
 import DeletionRequestsManager from './components/DeletionRequestsManager';
 import DetectedStudents from './components/DetectedStudents';
 import ProtectedRoute from './components/ProtectedRoute';
-import LiveTesting from './components/LiveTesting';
 import apiService from './services/api';
 
 import './App.css';
@@ -115,14 +114,6 @@ function App() {
             <ResultPage />
           </ProtectedRoute>
         } />
-
-        {/* LIVE TESTING — accessible by any authenticated user */}
-        <Route path="/live-testing" element={
-          <ProtectedRoute>
-            <LiveTesting />
-          </ProtectedRoute>
-        } />
-
         {/* ADMIN */}
         <Route path="/admin" element={
           <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
