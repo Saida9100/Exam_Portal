@@ -218,17 +218,19 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
   }, []);
 
   // 4. allReady
+  // FAST FIX: Do not block students because the AI face model/CDN is slow or blocked.
+  // Camera + microphone are required; face scan is advisory and proctoring continues in exam.
   useEffect(() => {
     if (manualOverride) {
       setAllReady(true);
       return;
     }
-    if (camStatus === 'good' && micStatus === 'good' && faceStatus === 'good') {
+    if (camStatus === 'good' && micStatus === 'good') {
       setAllReady(true);
     } else {
       setAllReady(false);
     }
-  }, [camStatus, micStatus, faceStatus, manualOverride]);
+  }, [camStatus, micStatus, manualOverride]);
 
   const brightPct = Math.round((brightness / 255) * 100);
   const audioPct = Math.round((audioLevel / 128) * 100);
@@ -432,6 +434,18 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
             ))}
           </div>
 
+          {camStatus === 'good' && micStatus === 'good' && faceStatus !== 'good' && (
+            <div style={{
+              marginTop: 14,
+              background: '#fff8e1', color: '#e65100',
+              padding: '10px 14px', borderRadius: 10, fontSize: 12,
+              border: '1px solid #ffe0b2', lineHeight: 1.5,
+            }}>
+              ⚠️ Face scan is taking longer than expected. You can still begin the exam after accepting the rules.
+              The camera will continue monitoring during the exam.
+            </div>
+          )}
+
           {errorMsg && (
             <div style={{
               marginTop: 14, background: '#ffebee', color: '#c62828',
@@ -462,7 +476,7 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
               padding: '10px 14px', borderRadius: 10, fontSize: 12,
               border: '1px solid #ffe0b2',
             }}>
-              ✓ Manual override accepted. The proctoring engine will still monitor your session during the exam.
+              ✓ Face scan bypass accepted. The camera/proctoring engine will still monitor your exam session.
             </div>
           )}
 
@@ -485,7 +499,9 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
               ? '🚀 Begin Exam Now'
               : !agreedRules
               ? '⚠️ Please check the agreement box above first'
-              : '⚠️ Waiting for clear face visibility…'}
+              : camStatus !== 'good' || micStatus !== 'good'
+              ? '⚠️ Waiting for camera and microphone…'
+              : '⚠️ Please accept the rules to begin'}
           </button>
         </div>
       </div>
