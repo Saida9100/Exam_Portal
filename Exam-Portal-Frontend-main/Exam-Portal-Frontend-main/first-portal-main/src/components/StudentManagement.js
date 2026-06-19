@@ -259,7 +259,9 @@ const StudentManagement = () => {
       if (data.success) {
         setBulkResult(data.data);
         const created = data.data?.summary?.created ?? validStudents.length;
-        setSuccess(`✅ ${created} student(s) created successfully!`);
+        const createdRows = data.data?.created || [];
+        const sentCount = createdRows.filter((r) => r.email_sent).length;
+        setSuccess(`✅ ${created} student(s) created successfully! 📨 ${sentCount}/${created} credentials email(s) sent.`);
         fetchStudents();
         setTimeout(() => { setBulkText(''); setBulkPreview([]); }, 3000);
       } else {
