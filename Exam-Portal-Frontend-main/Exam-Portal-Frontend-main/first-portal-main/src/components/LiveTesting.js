@@ -172,6 +172,16 @@ const LiveTesting = () => {
   const lastFPSCheckRef = useRef(Date.now());
 
   // ════════════════════════════════════════════════════════════════════
+  // Issues helper (declared before callbacks that use it so CI/ESLint is clean)
+  // ════════════════════════════════════════════════════════════════════
+  const pushIssue = useCallback((category, status, message) => {
+    setIssues((prev) => [
+      { id: Date.now() + Math.random(), category, status, message, ts: new Date() },
+      ...prev,
+    ].slice(0, 50));
+  }, []);
+
+  // ════════════════════════════════════════════════════════════════════
   // 1. Initialize camera + microphone
   // ════════════════════════════════════════════════════════════════════
   const initMedia = useCallback(async () => {
@@ -223,7 +233,7 @@ const LiveTesting = () => {
       setMicStatus('bad');
       pushIssue('cam', 'bad', `Camera/Mic denied: ${err?.message || err}`);
     }
-  }, []);
+  }, [pushIssue]);
 
   // ════════════════════════════════════════════════════════════════════
   // 2. Load face-api model
@@ -254,7 +264,7 @@ const LiveTesting = () => {
         pushIssue('face-api', 'bad', `Both CDNs failed: ${e1?.message} | ${e2?.message}`);
       }
     }
-  }, []);
+  }, [pushIssue]);
 
   // ════════════════════════════════════════════════════════════════════
   // 3. Network / CDN reachability test
@@ -279,17 +289,7 @@ const LiveTesting = () => {
       setModelCDNReachable('bad');
       pushIssue('network', 'warn', `Cannot reach face-api CDN — face detection will fail in exam`);
     }
-  }, []);
-
-  // ════════════════════════════════════════════════════════════════════
-  // 4. Issues helper
-  // ════════════════════════════════════════════════════════════════════
-  const pushIssue = useCallback((category, status, message) => {
-    setIssues((prev) => [
-      { id: Date.now() + Math.random(), category, status, message, ts: new Date() },
-      ...prev,
-    ].slice(0, 50));
-  }, []);
+  }, [pushIssue]);
 
   // ════════════════════════════════════════════════════════════════════
   // 5. Real-time analysis loop (audio + light)
