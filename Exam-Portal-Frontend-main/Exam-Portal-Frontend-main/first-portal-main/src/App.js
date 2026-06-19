@@ -8,7 +8,7 @@ import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 import ExamPortal from './components/ExamPortal';
 import ExamDashboard from './components/ExamDashboard';
-import ResultPage from './components/ResultPage';
+import ResultPage from './components/ResultPage'; 
 import CreateExam from './components/CreateExam';
 import StudentManagement from './components/StudentManagement';
 import {
