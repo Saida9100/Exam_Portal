@@ -188,6 +188,13 @@ class ApiService {
     });
   }
 
+  async reportViolation(examId, violation) {
+    return this.request(`/api/exam/${examId}/report-violation`, {
+      method: 'POST',
+      body: JSON.stringify({ violation }),
+    });
+  }
+
   async checkTimer(examId) {
     return this.request(`/api/exam/${examId}/timer`);
   }
