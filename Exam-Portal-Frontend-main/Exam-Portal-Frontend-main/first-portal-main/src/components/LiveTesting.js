@@ -27,8 +27,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Sidebar from '../Sidebar';
-import apiService from '../../services/api';
+import Sidebar from './Sidebar';
+import apiService from '../services/api';
 
 // ────────────────────────────────────────────────────────────────────
 // Face-api model URLs (same as ProctorEngine.js)
