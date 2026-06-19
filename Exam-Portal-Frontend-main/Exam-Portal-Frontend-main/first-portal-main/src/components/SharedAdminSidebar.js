@@ -79,7 +79,7 @@ const SharedAdminSidebar = ({ active, onLogout }) => {
           </div>
         </div>
 
-        <button type="button" className="sb-action" onClick={() => navigate(`${basePath}/settings`)}>
+        <button type="button" className="sb-action password" onClick={() => navigate(`${basePath}/settings`)}>
           <span>🔑</span>
           <span>Change Password</span>
         </button>
