@@ -120,7 +120,7 @@ const StudentManagement = () => {
         .then((res) => setAdminsList((res.admins || []).filter((a) => a.role === 'admin')))
         .catch(console.error);
     }
-  }, []);
+  }, [admin?.role]);
 
   // ✅ REWRITTEN: admin (non-super) submits request, super admin deletes directly
   const handleDelete = async (id, name, email) => {
