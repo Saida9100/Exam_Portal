@@ -9,7 +9,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   const isAuthenticated = apiService.isAuthenticated();
   const user = apiService.getUser();
   const userRole = user?.role;
-
+ 
   // NOT AUTHENTICATED → login
   if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace />;
