@@ -21,6 +21,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import apiService from './services/api';
 
 import './App.css';
+import './styles/modern-ui.css';
 
 function App() {
   const [authChecked, setAuthChecked] = useState(false);
@@ -143,6 +144,11 @@ function App() {
         <Route path="/admin/settings" element={
           <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
             <AdminSettings />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/detected-students" element={
+          <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+            <DetectedStudents />
           </ProtectedRoute>
         } />
 
