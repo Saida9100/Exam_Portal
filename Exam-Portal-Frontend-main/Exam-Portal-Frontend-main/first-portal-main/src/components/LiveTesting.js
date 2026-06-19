@@ -25,7 +25,7 @@
 //   exactly what the camera sees, whether the model loaded, what the
 //   light level is, and why face-api might be failing.
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react'; 
 import { useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import apiService from '../services/api';
