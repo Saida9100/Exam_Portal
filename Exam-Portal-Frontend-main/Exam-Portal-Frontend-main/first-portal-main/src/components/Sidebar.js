@@ -88,7 +88,7 @@ const Sidebar = ({ active }) => {
 
           <button
             type="button"
-            className="sb-action"
+            className="sb-action password"
             onClick={() => {
               setShowPwModal(true);
               setPwMsg({ type: '', text: '' });
