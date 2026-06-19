@@ -95,6 +95,7 @@ const ExamDashboard = () => {
   });
   const lastViolationTimesRef = useRef({});
   const violationsListRef = useRef([]);
+  const reportingViolationIdsRef = useRef(new Set());
 
 
 
@@ -244,6 +245,25 @@ const ExamDashboard = () => {
     }
   }, []);
 
+  const reportViolationImmediately = useCallback(async (violation) => {
+    if (!examId || !violation) return;
+    const key = violation.client_id || `${violation.type}-${violation.timestamp || Date.now()}`;
+    if (reportingViolationIdsRef.current.has(key)) return;
+    reportingViolationIdsRef.current.add(key);
+    try {
+      await apiService.reportViolation(examId, violation);
+      violation.persisted = true;
+    } catch (err) {
+      // Keep it in memory; submitExam will send it again at final submission.
+      reportingViolationIdsRef.current.delete(key);
+      console.warn('Immediate violation report failed:', err?.message || err);
+    }
+  }, [examId]);
+
+  const getPendingViolationsForSubmit = useCallback(() => (
+    violationsListRef.current.filter((v) => !v.persisted)
+  ), []);
+
   const handleForceSubmit = useCallback(async (reasonStr) => {
     if (submitted || submitting) return;
     setExamTerminated(true);
@@ -252,7 +272,7 @@ const ExamDashboard = () => {
       const timeTaken = examStartTimeRef.current ? Math.min(exam.duration * 60, Math.floor((Date.now() - examStartTimeRef.current) / 1000)) : 0;
       
       // Inject termination reason as a final violation log
-      const finalViolations = [...violationsListRef.current];
+      const finalViolations = getPendingViolationsForSubmit();
       if (reasonStr) {
         finalViolations.push({
           type: 'Exam Terminated',
@@ -272,7 +292,7 @@ const ExamDashboard = () => {
       setSubmitting(false);
       setExamTerminated(false);
     }
-  }, [examId, exam, answers, submitted, submitting, navigate, buildFormattedAnswers]);
+  }, [examId, exam, answers, submitted, submitting, navigate, buildFormattedAnswers, getPendingViolationsForSubmit]);
 
   const handleViolation = useCallback((violation) => {
     const now = Date.now();
@@ -282,13 +302,21 @@ const ExamDashboard = () => {
     if (now - lastTime < 15000) return;
     
     lastViolationTimesRef.current[violation.type] = now;
-    const newViolation = { ...violation, timestamp: now };
+    const newViolation = {
+      ...violation,
+      timestamp: now,
+      client_id: violation.client_id || `${examId || 'exam'}-${now}-${Math.random().toString(36).slice(2)}`,
+    };
     
     // Update ref for synchronous access during force submits
     violationsListRef.current = [...violationsListRef.current, newViolation];
     
     // Update state for UI
     setViolations(violationsListRef.current);
+
+    // Send snapshot to backend immediately so it appears in Detected Students
+    // even while the exam is still in progress.
+    reportViolationImmediately(newViolation);
 
     let maxLimit = 0;
     let currentCount = 0;
@@ -332,14 +360,14 @@ const ExamDashboard = () => {
       setWarningType(violation.type);
       setShowWarningModal(true);
     }
-  }, [handleForceSubmit]);
+  }, [examId, handleForceSubmit, reportViolationImmediately]);
 
   const handleAutoSubmit = useCallback(async () => {
     if (submitted || submitting) return;
     setSubmitting(true);
     try {
       const timeTaken = exam.duration * 60; // Max time taken
-      const result = await apiService.submitExam(examId, buildFormattedAnswers(exam, answers), timeTaken, violationsListRef.current);
+      const result = await apiService.submitExam(examId, buildFormattedAnswers(exam, answers), timeTaken, getPendingViolationsForSubmit());
       const attemptId = result?.attempt_id || result?.data?.attempt_id;
       navigate(`/result/${attemptId}`, {
         state: { autoSubmitted: true, reason: 'Time expired' },
@@ -348,7 +376,7 @@ const ExamDashboard = () => {
       setError(err.message || 'Failed to submit exam');
       setSubmitting(false);
     }
-  }, [examId, exam, answers, submitted, submitting, navigate, buildFormattedAnswers]);
+  }, [examId, exam, answers, submitted, submitting, navigate, buildFormattedAnswers, getPendingViolationsForSubmit]);
 
   const lastSwitchTimeRef = useRef(0);
   const examStartTimeRef = useRef(0);
@@ -461,7 +489,7 @@ const ExamDashboard = () => {
     try {
       const timeTaken = examStartTimeRef.current ? Math.min(exam.duration * 60, Math.floor((Date.now() - examStartTimeRef.current) / 1000)) : 0;
       // Append violations to answers payload so it's saved in the attempt
-      const result = await apiService.submitExam(examId, buildFormattedAnswers(exam, answers), timeTaken, violationsListRef.current);
+      const result = await apiService.submitExam(examId, buildFormattedAnswers(exam, answers), timeTaken, getPendingViolationsForSubmit());
       setSubmitted(true);
       const attemptId = result?.attempt_id || result?.data?.attempt_id;
       if (!attemptId) {
