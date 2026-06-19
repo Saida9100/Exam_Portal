@@ -32,8 +32,8 @@ const FACE_MODEL_URL_FALLBACK =
 // Tunables — these are deliberately forgiving so legit students don't get kicked out
 const CONFIG = {
   detectIntervalMs: 2000,           // poll every 2 s (was 3 s, faster = more responsive)
-  warmupMs: 5000,                   // give camera + model 5 s to settle before counting violations
-  noFaceGraceMs: 15000,             // continuous "no face" before violation (was 10 s)
+  warmupMs: 10000,                  // give camera + model 10 s to settle before counting violations
+  noFaceGraceMs: 30000,             // continuous "no face" before violation (more forgiving)
   multiPersonFrames: 5,             // frames needed before "multiple person" (was 8)
   scoreThreshold: 0.4,              // face-api confidence (was 0.5)
   inputSize: 320,                   // 416 was slow; 320 is a good speed/accuracy trade-off
@@ -308,16 +308,9 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
       }
 
       // ── 4. "No face" check (with proper cold-start logic) ────
-      // ✅ FIX: only flag "no face" if BOTH:
-      //    (a) face-api ran successfully AND found 0 faces, OR
-      //    (b) face-api is unavailable but the frame is "alive" (not black)
-      //    AND we've been continuously in this state for > graceMs
-      const isMissingFace =
-        faceApiWorked && faceCount === 0
-          ? true
-          : !faceApiWorked && frameIsAlive
-          ? true
-          : false;
+      // FAST FIX: only enforce no-face when face-api actually ran successfully.
+      // If the model/CDN is blocked, do NOT punish students with false no-face warnings.
+      const isMissingFace = faceApiWorked && faceCount === 0;
 
       const now = Date.now();
       if (isMissingFace) {
@@ -328,7 +321,7 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
           fireViolation(
             'No Face Detected',
             'High',
-            'Your face has not been visible for 15 seconds. Please look at the camera and ensure good lighting.',
+            'Your face has not been visible for 30 seconds. Please look at the camera and ensure good lighting.',
           );
           noFaceStartRef.current = now; // reset to avoid rapid-fire
         }
