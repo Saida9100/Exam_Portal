@@ -22,6 +22,11 @@ const DetectedStudents = () => {
   useEffect(() => {
     fetchResults();
     fetchDeletionRequests();
+    const interval = setInterval(() => {
+      fetchResults();
+      fetchDeletionRequests();
+    }, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchResults = async () => {
