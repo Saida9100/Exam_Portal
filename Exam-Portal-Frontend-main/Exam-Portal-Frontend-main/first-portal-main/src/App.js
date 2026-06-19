@@ -1,8 +1,11 @@
-// src/App.js — ADD route for /live-testing
+// src/App.js
+// ✅ FIXED: protected routes now have allowedRoles specified,
+//          and super_admin routes are properly accessible
+
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './components/LoginPage';
-import Dashboard from './components/Dashboard'; 
+import Dashboard from './components/Dashboard';
 import ExamPortal from './components/ExamPortal';
 import ExamDashboard from './components/ExamDashboard';
 import ResultPage from './components/ResultPage';
@@ -15,7 +18,6 @@ import SuperAdminDashboard from './components/SuperAdminDashboard';
 import DeletionRequestsManager from './components/DeletionRequestsManager';
 import DetectedStudents from './components/DetectedStudents';
 import ProtectedRoute from './components/ProtectedRoute';
-// ✅ NEW: live testing page
 import LiveTesting from './components/LiveTesting';
 import apiService from './services/api';
 
@@ -33,7 +35,7 @@ function App() {
           const response = await apiService.verifyToken();
           if (response.success && response.user) {
             localStorage.setItem('user', JSON.stringify(response.user));
-
+            // Setup idle timer
             let idleTimer;
             const IDLE_TIMEOUT_MS = 20 * 60 * 1000;
             const handleIdleLogout = () => {
@@ -65,34 +67,140 @@ function App() {
   }, []);
 
   if (!authChecked) {
-    return <div style={{ padding: 40, textAlign: 'center' }}>⏳ Loading…</div>;
+    return (
+      <div style={{
+        height: '100vh',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: '#f5f7fb', flexDirection: 'column', gap: 16,
+      }}>
+        <div style={{ fontSize: 48 }}>⏳</div>
+        <div style={{ color: '#555', fontSize: 16 }}>Loading…</div>
+      </div>
+    );
   }
+
+  // ✅ FIX: home route redirects based on role
+  const user = apiService.getUser();
+  const role = user?.role;
 
   return (
     <Router>
       <Routes>
+        {/* PUBLIC */}
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/exams" element={<ProtectedRoute><ExamPortal /></ProtectedRoute>} />
-        <Route path="/exam/:examId" element={<ProtectedRoute><ExamDashboard /></ProtectedRoute>} />
-        <Route path="/results" element={<ProtectedRoute><ResultPage /></ProtectedRoute>} />
-        <Route path="/result/:attemptId" element={<ProtectedRoute><ResultPage /></ProtectedRoute>} />
-        {/* ✅ NEW: Live Testing (accessible by any authenticated user) */}
-        <Route path="/live-testing" element={<ProtectedRoute><LiveTesting /></ProtectedRoute>} />
-        <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
-        <Route path="/admin/exams" element={<ProtectedRoute><ManageExams /></ProtectedRoute>} />
-        <Route path="/admin/create" element={<ProtectedRoute><CreateExam /></ProtectedRoute>} />
-        <Route path="/admin/results" element={<ProtectedRoute><ViewResults /></ProtectedRoute>} />
-        <Route path="/admin/students" element={<ProtectedRoute><StudentManagement /></ProtectedRoute>} />
-        <Route path="/admin/settings" element={<ProtectedRoute><AdminSettings /></ProtectedRoute>} />
-        <Route path="/superadmin" element={<ProtectedRoute><SuperAdminDashboard /></ProtectedRoute>} />
-        <Route path="/superadmin/deletion-requests" element={<ProtectedRoute><DeletionRequestsManager /></ProtectedRoute>} />
-        <Route path="/superadmin/manage-admins" element={<ProtectedRoute><ManageAdmins /></ProtectedRoute>} />
-        <Route path="/superadmin/students" element={<ProtectedRoute><StudentManagement /></ProtectedRoute>} />
-        <Route path="/superadmin/exams" element={<ProtectedRoute><ManageExams /></ProtectedRoute>} />
-        <Route path="/superadmin/create" element={<ProtectedRoute><CreateExam /></ProtectedRoute>} />
-        <Route path="/superadmin/detected-students" element={<ProtectedRoute><DetectedStudents /></ProtectedRoute>} />
-        <Route path="/" element={<Navigate to="/login" replace />} />
+
+        {/* STUDENT */}
+        <Route path="/dashboard" element={
+          <ProtectedRoute allowedRoles={['student']}>
+            <Dashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/exams" element={
+          <ProtectedRoute allowedRoles={['student']}>
+            <ExamPortal />
+          </ProtectedRoute>
+        } />
+        <Route path="/exam/:examId" element={
+          <ProtectedRoute allowedRoles={['student']}>
+            <ExamDashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/results" element={
+          <ProtectedRoute allowedRoles={['student']}>
+            <ResultPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/result/:attemptId" element={
+          <ProtectedRoute allowedRoles={['student']}>
+            <ResultPage />
+          </ProtectedRoute>
+        } />
+
+        {/* LIVE TESTING — accessible by any authenticated user */}
+        <Route path="/live-testing" element={
+          <ProtectedRoute>
+            <LiveTesting />
+          </ProtectedRoute>
+        } />
+
+        {/* ADMIN */}
+        <Route path="/admin" element={
+          <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/exams" element={
+          <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+            <ManageExams />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/create" element={
+          <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+            <CreateExam />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/results" element={
+          <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+            <ViewResults />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/students" element={
+          <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+            <StudentManagement />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/settings" element={
+          <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+            <AdminSettings />
+          </ProtectedRoute>
+        } />
+
+        {/* SUPER ADMIN ONLY */}
+        <Route path="/superadmin" element={
+          <ProtectedRoute allowedRoles={['super_admin']}>
+            <SuperAdminDashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/deletion-requests" element={
+          <ProtectedRoute allowedRoles={['super_admin']}>
+            <DeletionRequestsManager />
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/manage-admins" element={
+          <ProtectedRoute allowedRoles={['super_admin']}>
+            <ManageAdmins />
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/students" element={
+          <ProtectedRoute allowedRoles={['super_admin']}>
+            <StudentManagement />
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/exams" element={
+          <ProtectedRoute allowedRoles={['super_admin']}>
+            <ManageExams />
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/create" element={
+          <ProtectedRoute allowedRoles={['super_admin']}>
+            <CreateExam />
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/detected-students" element={
+          <ProtectedRoute allowedRoles={['super_admin']}>
+            <DetectedStudents />
+          </ProtectedRoute>
+        } />
+
+        {/* HOME → role-based redirect */}
+        <Route path="/" element={
+          role === 'super_admin' ? <Navigate to="/superadmin" replace /> :
+          role === 'admin' ? <Navigate to="/admin" replace /> :
+          role === 'student' ? <Navigate to="/dashboard" replace /> :
+          <Navigate to="/login" replace />
+        } />
+
+        {/* 404 → login */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Router>
