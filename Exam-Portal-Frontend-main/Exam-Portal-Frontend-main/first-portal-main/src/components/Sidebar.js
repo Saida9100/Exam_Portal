@@ -1,13 +1,10 @@
 // src/components/Sidebar.js
-// ✅ ENHANCED: Added "🔬 Live Test" link so students can verify their
-//    camera/mic/face-detection BEFORE starting the exam.
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiService from '../services/api';
 
 const Sidebar = ({ active }) => {
-  const navigate = useNavigate(); 
+  const navigate = useNavigate();
   const user = apiService.getUser();
 
   const [showPwModal, setShowPwModal] = useState(false);
@@ -40,8 +37,6 @@ const Sidebar = ({ active }) => {
     { key: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: '🏠' },
     { key: 'exams',     label: 'Exams',     path: '/exams',     icon: '📝' },
     { key: 'results',   label: 'Results',   path: '/results',   icon: '📊' },
-    // ✅ NEW: Live tech-check link
-    { key: 'live-test', label: '🔬 Live Test', path: '/live-testing', icon: '🔬', highlight: true },
   ];
 
   const itemStyle = (key, highlight) => ({
