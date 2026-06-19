@@ -1,7 +1,4 @@
 // src/components/proctoring/PreExamCheck.js
-// ✅ ENHANCED: Added "🔬 Open Live Test in new tab" link so students
-//    can do a deep diagnostic if the inline check is failing.
-
 import React, { useState, useEffect, useRef } from 'react'; 
 import { cleanExamDescription } from '../../utils/exportUtils';
 
@@ -434,26 +431,6 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
               </div>
             ))}
           </div>
-
-          {/* ✅ NEW: Link to full diagnostic */}
-          <a
-            href="/live-testing"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              marginTop: 14, padding: '10px 14px',
-              background: '#f3eafd', color: '#5B0A7B',
-              border: '1px solid #d1b3ed', borderRadius: 10,
-              fontSize: 13, fontWeight: 600, textDecoration: 'none',
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = '#ede0fa'}
-            onMouseLeave={(e) => e.currentTarget.style.background = '#f3eafd'}
-          >
-            <span>🔬 Open Full Live Diagnostic Test (new tab)</span>
-            <span>↗</span>
-          </a>
 
           {errorMsg && (
             <div style={{
