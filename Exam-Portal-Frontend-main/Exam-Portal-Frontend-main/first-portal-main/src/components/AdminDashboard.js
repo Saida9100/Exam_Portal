@@ -1827,7 +1827,9 @@ const ManageAdmins = () => {
       if (data.success) {
         setBulkResult(data.data);
         const created = data.data?.summary?.created ?? validAdmins.length;
-        setSuccess(`✅ ${created} admin(s) created successfully!`);
+        const createdRows = data.data?.created || [];
+        const sentCount = createdRows.filter((r) => r.email_sent).length;
+        setSuccess(`✅ ${created} admin(s) created successfully! 📨 ${sentCount}/${created} credentials email(s) sent.`);
         fetchAdmins();
         
         setTimeout(() => {
