@@ -7,7 +7,7 @@ import SharedAdminSidebar from './SharedAdminSidebar';
 import ExportToolbar from './ExportToolbar';
 import { prepareStudentsForExport, getExportFilename, filterByDateRange } from '../utils/exportUtils';
 
-// Password generator
+// Password generator (secure and compliant)
 const generatePassword = (name) => {
   if (!name || name.trim() === '') name = 'student';
   const nameBase = name.trim().split(' ')[0].toLowerCase().replace(/[^a-z]/g, '').substring(0, 4);
@@ -73,7 +73,6 @@ const StudentManagement = () => {
   const [selectedFilterAdminId, setSelectedFilterAdminId] = useState('');
   const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
 
-  // my own deletion requests
   const [myRequests, setMyRequests] = useState([]);
   const [requestStatusFilter, setRequestStatusFilter] = useState('');
 
@@ -109,7 +108,7 @@ const StudentManagement = () => {
       setError('');
       try {
         await apiService.deleteStudent(id);
-        setSuccess(`Student "${name}" deleted.`);
+        setSuccess(`Student "${name}" deleted successfully.`);
         fetchStudents();
       } catch (e) { setError(e.message); }
     } else {
@@ -164,9 +163,10 @@ const StudentManagement = () => {
         }),
       });
       if (res.success) {
-        setSuccess(`✅ Student "${form.name}" created!\n📧 ${form.email}\n🔑 ${form.password}`);
+        setSuccess(`✅ Student "${form.name}" created!\n📧 Email: ${form.email}\n🔑 Password: ${form.password}`);
         setForm({ name: '', email: '', password: '' });
         fetchStudents();
+        setTab('list');
       } else {
         setError(res.message || 'Failed to create student.');
       }
@@ -243,6 +243,7 @@ const StudentManagement = () => {
         const sentCount = createdRows.filter((r) => r.email_sent).length;
         setSuccess(`✅ ${created} student(s) created successfully! 📨 ${sentCount}/${created} credentials email(s) sent.`);
         fetchStudents();
+        setTab('list');
         setTimeout(() => { setBulkText(''); setBulkPreview([]); }, 3000);
       } else {
         setError(data.message || 'Failed to create students');
@@ -265,23 +266,40 @@ const StudentManagement = () => {
     : myRequests;
 
   const pendingCount = myRequests.filter((r) => r.status === 'Pending Approval').length;
-  const adminInitial = admin?.name?.charAt(0)?.toUpperCase() || 'A';
+  const adminEmail = admin?.email || 'Administrator';
+  const adminInitial = admin?.name ? admin.name.charAt(0).toUpperCase() : 'A';
+
+  // Component inline styles for premium look
+  const containerStyle = { display: 'flex', minHeight: '100vh', background: '#f8fafc' };
+  const tabBtnStyle = (t) => ({
+    padding: '10px 24px', borderRadius: '8px', fontWeight: '700', fontSize: '13.5px',
+    border: 'none', cursor: 'pointer', transition: 'all 0.15s',
+    background: tab === t ? '#fff' : 'transparent',
+    color: tab === t ? '#4f46e5' : '#64748b',
+    boxShadow: tab === t ? '0 4px 12px rgba(79, 70, 229, 0.08)' : 'none',
+  });
+
+  const inputStyle = {
+    width: '100%', padding: '12px 16px', fontSize: '14px', borderRadius: '10px',
+    border: '1.5px solid #e2e8f0', outline: 'none', boxSizing: 'border-box',
+    background: '#fff', color: '#1e293b', transition: 'all 0.2s',
+  };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div style={containerStyle}>
       <SharedAdminSidebar active="students" onLogout={() => apiService.logout()} />
 
       <main className="dashboard-main ep-page" style={{ flex: 1, minWidth: 0 }}>
         {/* Header */}
         <div className="ep-page-header">
           <div>
-            <div className="ep-kicker">Manage Candidates</div>
+            <div className="ep-kicker">Manage Platform Candidates</div>
             <h1>Student Accounts</h1>
             <p>
-              Showing {students.length} student{students.length === 1 ? '' : 's'}
+              Showing {students.length} active candidate{students.length === 1 ? '' : 's'}
               {pendingCount > 0 && (
-                <span className="ep-badge ep-badge-warning" style={{ marginLeft: 10 }}>
-                  ⏳ {pendingCount} Pending Request{pendingCount > 1 ? 's' : ''}
+                <span className="ep-badge ep-badge-warning" style={{ marginLeft: 12 }}>
+                  ⏳ {pendingCount} Deletion Request{pendingCount > 1 ? 's' : ''} Pending
                 </span>
               )}
             </p>
@@ -290,31 +308,32 @@ const StudentManagement = () => {
             <div className="avatar">{adminInitial}</div>
             <div>
               <strong>{admin?.name || 'Administrator'}</strong>
-              <span>{admin?.email}</span>
+              <span>{adminEmail}</span>
             </div>
           </div>
         </div>
 
+        {/* Action Feedbacks */}
         {success && (
-          <div className="ep-alert" style={{ background: 'var(--ep-success-soft)', color: 'var(--ep-success)', border: '1px solid #bbf7d0', padding: 14, borderRadius: 10, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 13.5, whiteSpace: 'pre-line' }}>{success}</span>
-            <button onClick={() => setSuccess('')} style={{ background: 'none', border: 'none', color: 'var(--ep-success)', fontSize: 18, fontWeight: 'bold' }}>×</button>
+          <div className="ep-alert" style={{ background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', padding: 14, borderRadius: 10, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13.5, whiteSpace: 'pre-line', fontWeight: 600 }}>{success}</span>
+            <button onClick={() => setSuccess('')} style={{ background: 'none', border: 'none', color: '#15803d', fontSize: 18, fontWeight: 'bold', cursor: 'pointer' }}>×</button>
           </div>
         )}
         {error && (
-          <div className="ep-alert" style={{ background: 'var(--ep-danger-soft)', color: 'var(--ep-danger)', border: '1px solid #fecaca', padding: 14, borderRadius: 10, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 13.5 }}>{error}</span>
-            <button onClick={() => setError('')} style={{ background: 'none', border: 'none', color: 'var(--ep-danger)', fontSize: 18, fontWeight: 'bold' }}>×</button>
+          <div className="ep-alert" style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', padding: 14, borderRadius: 10, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600 }}>{error}</span>
+            <button onClick={() => setError('')} style={{ background: 'none', border: 'none', color: '#b91c1c', fontSize: 18, fontWeight: 'bold', cursor: 'pointer' }}>×</button>
           </div>
         )}
 
-        {/* Toolbar Tabs */}
-        <div className="toolbar" style={{ marginBottom: 18 }}>
-          <div className="pill-tabs">
-            <button className={tab === 'list' ? 'active' : ''} onClick={() => setTab('list')}>👥 Student List</button>
-            <button className={tab === 'manual' ? 'active' : ''} onClick={() => setTab('manual')}>➕ Add Single</button>
-            <button className={tab === 'bulk' ? 'active' : ''} onClick={() => setTab('bulk')}>📋 Bulk Create</button>
-            <button className={tab === 'requests' ? 'active' : ''} onClick={() => setTab('requests')}>
+        {/* Tabs Bar */}
+        <div className="toolbar" style={{ marginBottom: 20 }}>
+          <div className="pill-tabs" style={{ background: '#e2e8f0', padding: 4, borderRadius: 10, display: 'inline-flex', gap: 4 }}>
+            <button style={tabBtnStyle('list')} onClick={() => setTab('list')}>👥 Student List</button>
+            <button style={tabBtnStyle('manual')} onClick={() => setTab('manual')}>➕ Add Single</button>
+            <button style={tabBtnStyle('bulk')} onClick={() => setTab('bulk')}>📋 Bulk Create</button>
+            <button style={tabBtnStyle('requests')} onClick={() => setTab('requests')}>
               🔔 My Requests
               {pendingCount > 0 && (
                 <span className="badge ms-2" style={{ background: 'var(--ep-danger)', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 12 }}>{pendingCount}</span>
@@ -322,17 +341,17 @@ const StudentManagement = () => {
             </button>
           </div>
           {admin?.role === 'super_admin' && (
-            <button onClick={handleClearData} className="ep-btn ep-btn-outline" style={{ color: 'var(--ep-danger)', borderColor: 'var(--ep-danger-soft)' }}>
+            <button onClick={handleClearData} className="ep-btn ep-btn-outline" style={{ color: 'var(--ep-danger)', borderColor: 'var(--ep-danger-soft)', fontSize: 13, fontWeight: 700 }}>
               🗑️ Clear All Students
             </button>
           )}
         </div>
 
-        {/* ═══ TAB: REQUESTS ═══ */}
+        {/* ═══ TAB: MY REQUESTS ═══ */}
         {tab === 'requests' && (
-          <div className="ep-card" style={{ padding: 24 }}>
-            <div className="d-flex gap-2 mb-3 align-items-center flex-wrap" style={{ borderBottom: '1px solid var(--ep-line)', paddingBottom: 16 }}>
-              <span style={{ fontSize: 13, color: 'var(--ep-muted)', fontWeight: 600 }}>Filter Requests:</span>
+          <div className="ep-card" style={{ padding: 24, background: '#fff' }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap', borderBottom: '1px solid var(--ep-line)', paddingBottom: 16 }}>
+              <span style={{ fontSize: 13, color: 'var(--ep-muted)', fontWeight: 700 }}>Filter Requests:</span>
               {['', 'Pending Approval', 'Approved', 'Rejected'].map((s) => (
                 <button
                   key={s || 'all'}
@@ -353,34 +372,45 @@ const StudentManagement = () => {
                 <p>When you request deletion of students, they will list here for Super Admin audit.</p>
               </div>
             ) : (
-              <div className="ep-grid ep-grid-2">
-                {filteredRequests.map((req) => (
-                  <div className="ep-card" key={req.id} style={{ padding: 18, background: 'var(--ep-surface-2)' }}>
-                    <div className="d-flex align-items-center justify-content-between">
-                      <StatusPill status={req.status} />
-                      <span style={{ fontSize: 11, color: 'var(--ep-muted)' }}>ID: #{req.id} • Student Deletion</span>
-                    </div>
-                    <div style={{ marginTop: 10, fontSize: 15, fontWeight: 700, color: 'var(--ep-ink)' }}>
-                      {req.display_name || `Target ID: ${req.target_id}`}
-                    </div>
-                    {req.display_subtitle && (
-                      <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 2 }}>{req.display_subtitle}</div>
-                    )}
-                    {req.reason && (
-                      <div style={{
-                        marginTop: 10, padding: '10px 12px',
-                        background: '#fff', borderRadius: 8,
-                        fontSize: 12.5, color: 'var(--ep-ink-2)',
-                        borderLeft: '3px solid var(--ep-brand)',
-                      }}>
-                        <strong>Reason:</strong> {req.reason}
+              <div className="ep-grid ep-grid-2" style={{ gap: 16 }}>
+                {filteredRequests.map((req) => {
+                  const borderColors = {
+                    'Pending Approval': '4px solid var(--ep-warning)',
+                    'Approved': '4px solid var(--ep-success)',
+                    'Rejected': '4px solid var(--ep-danger)',
+                  }[req.status] || '1px solid var(--ep-line)';
+
+                  return (
+                    <div className="ep-card" key={req.id} style={{
+                      padding: 20, background: 'var(--ep-surface-2)',
+                      borderLeft: borderColors,
+                    }}>
+                      <div className="d-flex align-items-center justify-content-between">
+                        <StatusPill status={req.status} />
+                        <span style={{ fontSize: 11, color: 'var(--ep-muted)' }}>ID: #{req.id} • Deletion</span>
                       </div>
-                    )}
-                    <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--ep-muted)' }}>
-                      Submitted: {new Date(req.created_at).toLocaleString('en-IN')}
+                      <div style={{ marginTop: 12, fontSize: 15.5, fontWeight: 800, color: 'var(--ep-ink)' }}>
+                        {req.display_name || `Target ID: ${req.target_id}`}
+                      </div>
+                      {req.display_subtitle && (
+                        <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 2 }}>{req.display_subtitle}</div>
+                      )}
+                      {req.reason && (
+                        <div style={{
+                          marginTop: 10, padding: '10px 12px',
+                          background: '#fff', borderRadius: 8,
+                          fontSize: 12.5, color: 'var(--ep-ink-2)',
+                          border: '1px solid var(--ep-line)',
+                        }}>
+                          <strong>Reason:</strong> {req.reason}
+                        </div>
+                      )}
+                      <div style={{ marginTop: 12, fontSize: 11.5, color: 'var(--ep-muted)' }}>
+                        Submitted: {new Date(req.created_at).toLocaleString('en-IN')}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -395,7 +425,7 @@ const StudentManagement = () => {
                   <select
                     value={selectedFilterAdminId}
                     onChange={(e) => setSelectedFilterAdminId(e.target.value)}
-                    style={{ fontWeight: 600, color: 'var(--ep-brand)' }}
+                    style={{ ...inputStyle, fontWeight: '700', color: 'var(--ep-brand)' }}
                   >
                     <option value="">All Faculty / Admins</option>
                     {adminsList.map((a) => (
@@ -411,6 +441,7 @@ const StudentManagement = () => {
                   type="text" placeholder="🔍 Search students by name or email..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
+                  style={inputStyle}
                 />
               </div>
             </div>
@@ -542,6 +573,7 @@ const StudentManagement = () => {
                       if (autoPass) setForm((f) => ({ ...f, password: generatePassword(v) }));
                     }}
                     placeholder="e.g. John Doe"
+                    style={inputStyle}
                   />
                 </div>
                 <div className="field">
@@ -550,6 +582,7 @@ const StudentManagement = () => {
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                     placeholder="e.g. john@university.edu"
+                    style={inputStyle}
                   />
                 </div>
               </div>
@@ -565,7 +598,7 @@ const StudentManagement = () => {
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   readOnly={autoPass}
-                  style={{ background: autoPass ? 'var(--ep-surface-2)' : '#fff' }}
+                  style={{ ...inputStyle, background: autoPass ? 'var(--ep-surface-2)' : '#fff' }}
                 />
               </div>
               {admin?.role === 'super_admin' && (
@@ -574,6 +607,7 @@ const StudentManagement = () => {
                   <select required
                     value={selectedAdminId}
                     onChange={(e) => setSelectedAdminId(e.target.value)}
+                    style={inputStyle}
                   >
                     <option value="">Select admin…</option>
                     {adminsList.map((a) => (
@@ -604,7 +638,7 @@ const StudentManagement = () => {
             </div>
             <div className="field">
               <label>Upload File (.csv, .txt)</label>
-              <input type="file" accept=".csv,.txt" onChange={handleCSVUpload} style={{ padding: '8px 12px' }} />
+              <input type="file" accept=".csv,.txt" onChange={handleCSVUpload} style={{ ...inputStyle, padding: '8px 12px' }} />
             </div>
             <div className="field">
               <label>Or Paste Student List</label>
@@ -613,7 +647,7 @@ const StudentManagement = () => {
                 value={bulkText}
                 onChange={(e) => { setBulkText(e.target.value); parseBulkText(e.target.value); }}
                 rows={6}
-                style={{ fontFamily: 'monospace', fontSize: 12.5 }}
+                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12.5 }}
               />
             </div>
             {bulkPreview.length > 0 && (
@@ -624,7 +658,7 @@ const StudentManagement = () => {
             {admin?.role === 'super_admin' && (
               <div className="field">
                 <label>Assign to Faculty Admin *</label>
-                <select value={selectedAdminId} onChange={(e) => setSelectedAdminId(e.target.value)}>
+                <select value={selectedAdminId} onChange={(e) => setSelectedAdminId(e.target.value)} style={inputStyle}>
                   <option value="">Select admin…</option>
                   {adminsList.map((a) => (
                     <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
@@ -680,7 +714,7 @@ const StudentManagement = () => {
                   value={resetModal.newPassword}
                   onChange={(e) => setResetModal({ ...resetModal, newPassword: e.target.value })}
                   placeholder="Enter secure new password"
-                  disabled={actionLoading}
+                  style={inputStyle}
                 />
               </div>
 
