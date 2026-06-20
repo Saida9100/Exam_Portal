@@ -454,10 +454,9 @@ const StudentManagement = () => {
                 </div>
                 <ExportToolbar
                   data={finalFilteredStudents}
-                  prepareDataFn={prepareStudentsForExport}
-                  filenameFn={(d) => getExportFilename('students', d)}
-                  filters={exportFilters}
-                  onFiltersChange={setExportFilters}
+                  prepareExportData={prepareStudentsForExport}
+                  filename={getExportFilename('students', 'list')}
+                  onFilterChange={setExportFilters}
                 />
               </div>
 
