@@ -293,23 +293,23 @@ const CreateExam = () => {
 
   // -------- MAIN FORM --------
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f5f7fa' }}>
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
       <SharedAdminSidebar active="create" />
 
       {/* Main Content */}
-      <div className="dashboard-main" style={{ flex: 1, overflowX: 'hidden' }}>
+      <main className="dashboard-main ep-page" style={{ flex: 1, overflowX: 'hidden' }}>
         {/* Header */}
-        <div style={{
-          background: '#fff', padding: '18px 32px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          position: 'sticky', top: 0, zIndex: 100
-        }}>
-          <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#1a1a2e' }}>Create New Exam</h3>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{user?.email}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {user?.name?.charAt(0)?.toUpperCase()}
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Faculty Workspace</div>
+            <h1>Create New Exam</h1>
+            <p>Publish a secure exam using PDF questions and custom answer keys.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{user?.name?.charAt(0)?.toUpperCase() || 'A'}</div>
+            <div>
+              <strong>{user?.name || 'Administrator'}</strong>
+              <span>{user?.email}</span>
             </div>
           </div>
         </div>
@@ -729,7 +729,7 @@ const CreateExam = () => {
             </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 };
