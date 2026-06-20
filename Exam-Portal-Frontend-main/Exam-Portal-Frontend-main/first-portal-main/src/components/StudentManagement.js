@@ -73,6 +73,7 @@ const StudentManagement = () => {
   const [selectedFilterAdminId, setSelectedFilterAdminId] = useState('');
   const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
 
+  // my own deletion requests
   const [myRequests, setMyRequests] = useState([]);
   const [requestStatusFilter, setRequestStatusFilter] = useState('');
 
@@ -277,10 +278,10 @@ const StudentManagement = () => {
             <div className="ep-kicker">Manage Candidates</div>
             <h1>Student Accounts</h1>
             <p>
-              {students.length} active student(s)
+              Showing {students.length} student{students.length === 1 ? '' : 's'}
               {pendingCount > 0 && (
                 <span className="ep-badge ep-badge-warning" style={{ marginLeft: 10 }}>
-                  ⏳ {pendingCount} Pending Deletion Request{pendingCount > 1 ? 's' : ''}
+                  ⏳ {pendingCount} Pending Request{pendingCount > 1 ? 's' : ''}
                 </span>
               )}
             </p>
@@ -390,11 +391,10 @@ const StudentManagement = () => {
           <>
             <div className="ep-grid ep-grid-2 mb-3">
               {admin?.role === 'super_admin' && (
-                <div className="ep-field" style={{ marginBottom: 0 }}>
+                <div className="field" style={{ marginBottom: 0 }}>
                   <select
                     value={selectedFilterAdminId}
                     onChange={(e) => setSelectedFilterAdminId(e.target.value)}
-                    className="ep-input"
                     style={{ fontWeight: 600, color: 'var(--ep-brand)' }}
                   >
                     <option value="">All Faculty / Admins</option>
@@ -406,12 +406,11 @@ const StudentManagement = () => {
                   </select>
                 </div>
               )}
-              <div className="ep-field" style={{ marginBottom: 0 }}>
+              <div className="field" style={{ marginBottom: 0 }}>
                 <input
                   type="text" placeholder="🔍 Search students by name or email..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="ep-input"
                 />
               </div>
             </div>
@@ -526,37 +525,37 @@ const StudentManagement = () => {
 
         {/* ═══ TAB: MANUAL ═══ */}
         {tab === 'manual' && (
-          <div className="ep-card" style={{ maxWidth: 600, margin: '0 auto', padding: 24 }}>
+          <div className="ep-card" style={{ maxWidth: 640, margin: '0 auto', padding: 28 }}>
             <div className="ep-card-head" style={{ borderBottom: '1px solid var(--ep-line)', paddingBottom: 12, marginBottom: 20 }}>
               <h3 style={{ margin: 0, fontSize: 16 }}>➕ Create Single Student Account</h3>
               <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ep-muted)' }}>Add individual student candidates instantly.</p>
             </div>
             <form onSubmit={handleSingleCreate}>
-              <div className="ep-field">
-                <label>Full Name</label>
-                <input type="text" required
-                  value={form.name}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setForm({ ...form, name: v });
-                    if (autoPass) setForm((f) => ({ ...f, password: generatePassword(v) }));
-                  }}
-                  className="ep-input"
-                  placeholder="e.g. John Doe"
-                />
+              <div className="form-row">
+                <div className="field">
+                  <label>Full Name *</label>
+                  <input type="text" required
+                    value={form.name}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setForm({ ...form, name: v });
+                      if (autoPass) setForm((f) => ({ ...f, password: generatePassword(v) }));
+                    }}
+                    placeholder="e.g. John Doe"
+                  />
+                </div>
+                <div className="field">
+                  <label>Email Address *</label>
+                  <input type="email" required
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    placeholder="e.g. john@university.edu"
+                  />
+                </div>
               </div>
-              <div className="ep-field">
-                <label>Email Address</label>
-                <input type="email" required
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="ep-input"
-                  placeholder="e.g. john@university.edu"
-                />
-              </div>
-              <div className="ep-field">
+              <div className="field">
                 <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Password</span>
+                  <span>Password *</span>
                   <span onClick={() => { setAutoPass(!autoPass); if (!autoPass) setForm({ ...form, password: generatePassword(form.name) }); }}
                     style={{ color: 'var(--ep-brand)', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
                     {autoPass ? '🔄 Switch to Manual' : '✏️ Switch to Auto'}
@@ -566,17 +565,15 @@ const StudentManagement = () => {
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   readOnly={autoPass}
-                  className="ep-input"
                   style={{ background: autoPass ? 'var(--ep-surface-2)' : '#fff' }}
                 />
               </div>
               {admin?.role === 'super_admin' && (
-                <div className="ep-field">
-                  <label>Assign to Faculty Admin</label>
+                <div className="field">
+                  <label>Assign to Faculty Admin *</label>
                   <select required
                     value={selectedAdminId}
                     onChange={(e) => setSelectedAdminId(e.target.value)}
-                    className="ep-input"
                   >
                     <option value="">Select admin…</option>
                     {adminsList.map((a) => (
@@ -585,6 +582,9 @@ const StudentManagement = () => {
                   </select>
                 </div>
               )}
+              <div className="field-help" style={{ marginBottom: 14 }}>
+                Tip: Share credentials with the student. They can easily reset their password upon logging in.
+              </div>
               <button type="submit" disabled={actionLoading} className="ep-btn ep-btn-primary ep-btn-block" style={{ marginTop: 10 }}>
                 {actionLoading ? 'Creating Candidate…' : '➕ Create Student Account'}
               </button>
@@ -594,7 +594,7 @@ const StudentManagement = () => {
 
         {/* ═══ TAB: BULK ═══ */}
         {tab === 'bulk' && (
-          <div className="ep-card" style={{ maxWidth: 700, margin: '0 auto', padding: 24 }}>
+          <div className="ep-card" style={{ maxWidth: 700, margin: '0 auto', padding: 28 }}>
             <div className="ep-card-head" style={{ borderBottom: '1px solid var(--ep-line)', paddingBottom: 12, marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 16 }}>📋 Bulk Create Student Accounts</h3>
               <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ep-muted)' }}>Paste raw CSV/list or upload a text file directly.</p>
@@ -602,18 +602,17 @@ const StudentManagement = () => {
             <div className="ep-alert tips" style={{ background: 'var(--ep-info-soft)', color: '#0369a1', border: '1px solid #bae6fd', padding: 12, borderRadius: 10, fontSize: 12.5, marginBottom: 16 }}>
               Format structure: <code>Name, Email, Password</code> (one candidate per line). Password is optional and will auto-generate if omitted.
             </div>
-            <div className="ep-field">
+            <div className="field">
               <label>Upload File (.csv, .txt)</label>
-              <input type="file" accept=".csv,.txt" onChange={handleCSVUpload} className="ep-input" style={{ padding: '8px 12px' }} />
+              <input type="file" accept=".csv,.txt" onChange={handleCSVUpload} style={{ padding: '8px 12px' }} />
             </div>
-            <div className="ep-field">
+            <div className="field">
               <label>Or Paste Student List</label>
               <textarea
                 placeholder={`John Doe, john@example.com, Pass@123\nJane Smith, jane@example.com`}
                 value={bulkText}
                 onChange={(e) => { setBulkText(e.target.value); parseBulkText(e.target.value); }}
                 rows={6}
-                className="ep-input"
                 style={{ fontFamily: 'monospace', fontSize: 12.5 }}
               />
             </div>
@@ -623,9 +622,9 @@ const StudentManagement = () => {
               </div>
             )}
             {admin?.role === 'super_admin' && (
-              <div className="ep-field">
-                <label>Assign to Faculty Admin</label>
-                <select value={selectedAdminId} onChange={(e) => setSelectedAdminId(e.target.value)} className="ep-input">
+              <div className="field">
+                <label>Assign to Faculty Admin *</label>
+                <select value={selectedAdminId} onChange={(e) => setSelectedAdminId(e.target.value)}>
                   <option value="">Select admin…</option>
                   {adminsList.map((a) => (
                     <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
@@ -673,7 +672,7 @@ const StudentManagement = () => {
             </div>
 
             <form onSubmit={handleResetPassword}>
-              <div className="ep-field">
+              <div className="field">
                 <label>New Password</label>
                 <input
                   type="text"
@@ -681,7 +680,6 @@ const StudentManagement = () => {
                   value={resetModal.newPassword}
                   onChange={(e) => setResetModal({ ...resetModal, newPassword: e.target.value })}
                   placeholder="Enter secure new password"
-                  className="ep-input"
                   disabled={actionLoading}
                 />
               </div>
