@@ -1224,7 +1224,7 @@ const ManageExams = () => {
             </Table>
           </div>
         )}
-      </div>
+      </main>
 
       <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)} centered>
         <Modal.Header closeButton>
@@ -1254,7 +1254,7 @@ const ManageExams = () => {
           </Button>
         </Modal.Footer>
       </Modal>
-    </main>
+    </div>
   );
 };
 
@@ -1592,7 +1592,7 @@ const ViewResults = () => {
             </Table>
           </div>
         )}
-      </div>
+      </main>
 
       <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)} centered>
         <Modal.Header closeButton>
@@ -1619,7 +1619,7 @@ const ViewResults = () => {
           </Button>
         </Modal.Footer>
       </Modal>
-    </main>
+    </div>
   );
 };
 
@@ -2073,7 +2073,7 @@ const ManageAdmins = () => {
                 />
               </div>
               <div style={{ marginBottom: 28 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ display: 'flex', justifycontent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <label style={{ fontWeight: 600, fontSize: 13, color: '#444' }}>Password *</label>
                   <label style={{ fontSize: 12, color: '#5B0A7B', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                     <input type="checkbox" checked={autoPass} onChange={e => {
