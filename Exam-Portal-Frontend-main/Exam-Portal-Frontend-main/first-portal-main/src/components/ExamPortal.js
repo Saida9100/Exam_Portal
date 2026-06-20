@@ -178,25 +178,25 @@ const ExamPortal = () => {
     const currentTime = new Date();
     const startTime = parseExamStartTime(exam);
     if (startTime && startTime > currentTime) {
-      return <Badge className="badge-status" style={{ background: '#fff3e0', color: '#e65100', border: '1px solid #ffb74d' }}>Upcoming</Badge>;
+      return <span className="ep-badge ep-badge-warning">Upcoming</span>;
     }
     
     if (!exam.deadline) {
-      return <Badge className="badge-status" bg="primary">Active</Badge>;
+      return <span className="ep-badge ep-badge-success">Active</span>;
     }
     
     const deadlineTime = new Date(exam.deadline);
     const timeRemaining = deadlineTime - currentTime;
     
     if (timeRemaining <= 0) {
-      return <Badge className="badge-status" bg="secondary">Expired</Badge>;
+      return <span className="ep-badge ep-badge-muted">Expired</span>;
     }
     
     if (timeRemaining <= 30 * 60 * 1000) {
-      return <Badge className="badge-status" bg="warning" text="dark">Expiring Soon</Badge>;
+      return <span className="ep-badge ep-badge-danger">Expiring Soon</span>;
     }
     
-    return <Badge className="badge-status" bg="success">Active</Badge>;
+    return <span className="ep-badge ep-badge-success">Active</span>;
   };
 
   const getExamList = () => {
@@ -222,21 +222,12 @@ const ExamPortal = () => {
     return (
       <div style={{ display: 'flex', minHeight: '100vh' }}>
         <Sidebar active="exams" onLogout={handleLogout} />
-        <div className="dashboard-main">
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'center', 
-            alignItems: 'center', 
-            height: '100vh',
-            flexDirection: 'column',
-            gap: 16
-          }}>
-            <div className="spinner-border text-primary" role="status" style={{ width: 60, height: 60 }}>
-              <span className="visually-hidden">Loading...</span>
-            </div>
-            <div style={{ fontSize: 18, color: '#667eea', fontWeight: 600 }}>Loading exams...</div>
+        <main className="dashboard-main ep-page">
+          <div className="ep-loading-card">
+            <div className="spinner-border text-primary" role="status" />
+            <div>Loading exams...</div>
           </div>
-        </div>
+        </main>
       </div>
     );
   }
@@ -244,22 +235,25 @@ const ExamPortal = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar active="exams" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div className="dashboard-topbar">
-          <h3>Exams</h3>
-          <div className="user-info">
+      
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Student Workspace</div>
+            <h1>Exams</h1>
+            <p>View, join and complete examinations assigned to you.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{studentInitial}</div>
             <div>
-              <div style={{ fontWeight: 600, fontSize: 14, color: '#1a1a2e' }}>{studentName}</div>
-              <div style={{ fontSize: 12, color: '#888' }}>{studentEmail}</div>
-            </div>
-            <div className="user-avatar" style={{ background: 'linear-gradient(135deg, #667eea, #764ba2)' }}>
-              {studentInitial}
+              <strong>{studentName}</strong>
+              <span>{studentEmail}</span>
             </div>
           </div>
         </div>
 
         {error && (
-          <Alert variant="danger" dismissible onClose={() => setError('')} style={{ borderRadius: 10 }}>
+          <Alert variant="danger" dismissible onClose={() => setError('')} className="ep-alert-box">
             {error}
           </Alert>
         )}
@@ -274,18 +268,18 @@ const ExamPortal = () => {
         )}
 
         {upcomingCount > 0 && activeTab !== 'upcoming' && (
-          <div className="upcoming-notification-banner" onClick={() => setActiveTab('upcoming')} style={{ background: '#fff8e1', border: '1px solid #ffe0b2', borderRadius: 12, padding: '14px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer', transition: 'all 0.2s', color: '#e65100', boxShadow: '0 2px 10px rgba(255,152,0,0.12)' }}>
-            <span style={{ fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 42, height: 42, background: '#ffcc80', borderRadius: '50%', color: '#fff', boxShadow: '0 2px 6px rgba(0,0,0,0.1)' }}>🔔</span>
+          <div className="upcoming-notification-banner" onClick={() => setActiveTab('upcoming')} style={{ background: 'var(--ep-warning-soft)', border: '1px solid #fde68a', borderRadius: 12, padding: '14px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer', transition: 'all 0.2s', color: 'var(--ep-warning)' }}>
+            <span style={{ fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 42, height: 42, background: 'var(--ep-warning)', borderRadius: '50%', color: '#fff' }}>🔔</span>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ep-ink)' }}>
                 <span>Upcoming Scheduled Exams</span>
-                <Badge bg="warning" text="dark" style={{ fontSize: 11, padding: '4px 8px', borderRadius: 12, fontWeight: 800, border: '1px solid #ff9800' }}>
+                <span className="ep-badge ep-badge-warning">
                   {upcomingCount} New
-                </Badge>
+                </span>
               </div>
-              <div style={{ fontSize: 13, color: '#b26a00' }}>You have {upcomingCount} upcoming exam{upcomingCount > 1 ? 's' : ''} scheduled to open in the future. Click here to view start dates and opening times.</div>
+              <div style={{ fontSize: 13, color: 'var(--ep-muted)' }}>You have {upcomingCount} upcoming exam{upcomingCount > 1 ? 's' : ''} scheduled to open in the future. Click here to view start dates and opening times.</div>
             </div>
-            <div style={{ fontWeight: 700, fontSize: 13, color: '#e65100', background: '#ffe0b2', padding: '8px 16px', borderRadius: 10 }}>
+            <div className="ep-btn ep-btn-outline" style={{ background: '#fff' }}>
               View Upcoming →
             </div>
           </div>
@@ -293,42 +287,35 @@ const ExamPortal = () => {
 
         <Nav variant="pills" className="exam-tab-pills mb-4" activeKey={activeTab}>
           <Nav.Item>
-            <Nav.Link eventKey="ongoing" onClick={() => setActiveTab('ongoing')}>
+            <Nav.Link eventKey="ongoing" onClick={() => setActiveTab('ongoing')} className={activeTab === 'ongoing' ? 'active' : ''}>
               Ongoing Exams
-              {ongoingCount > 0 && <Badge bg="danger" className="ms-2" pill>{ongoingCount}</Badge>}
+              {ongoingCount > 0 && <span className="badge ms-2" style={{ background: 'var(--ep-danger)', color: '#fff' }}>{ongoingCount}</span>}
             </Nav.Link>
           </Nav.Item>
           <Nav.Item className="ms-2">
-            <Nav.Link eventKey="upcoming" onClick={() => setActiveTab('upcoming')} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Nav.Link eventKey="upcoming" onClick={() => setActiveTab('upcoming')} className={activeTab === 'upcoming' ? 'active' : ''} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>Upcoming Exams</span>
               {upcomingCount > 0 && (
-                <Badge bg="warning" text="dark" pill style={{ fontWeight: 800, border: '1px solid #ff9800', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span>🔔</span> {upcomingCount}
-                </Badge>
+                <span className="badge" style={{ background: 'var(--ep-warning)', color: '#fff' }}>
+                  {upcomingCount}
+                </span>
               )}
             </Nav.Link>
           </Nav.Item>
           <Nav.Item className="ms-2">
-            <Nav.Link eventKey="past" onClick={() => setActiveTab('past')}>
+            <Nav.Link eventKey="past" onClick={() => setActiveTab('past')} className={activeTab === 'past' ? 'active' : ''}>
               Past Exams
             </Nav.Link>
           </Nav.Item>
         </Nav>
 
         {examList.length === 0 ? (
-          <div style={{ 
-            textAlign: 'center', 
-            padding: 80,
-            background: '#f8f9fa',
-            borderRadius: 12
-          }}>
+          <div className="ep-empty">
             <div style={{ fontSize: 64, marginBottom: 16 }}>
               {activeTab === 'ongoing' ? '📝' : activeTab === 'upcoming' ? '📅' : '📋'}
             </div>
-            <h5 style={{ color: '#666', fontWeight: 600 }}>
-              No {activeTab} exams found
-            </h5>
-            <p style={{ color: '#888', fontSize: 14 }}>
+            <h4>No {activeTab} exams found</h4>
+            <p>
               {activeTab === 'ongoing' && 'There are no active exams at the moment.'}
               {activeTab === 'upcoming' && 'No exams scheduled in the near future.'}
               {activeTab === 'past' && 'You haven\'t taken any exams yet.'}
@@ -343,13 +330,13 @@ const ExamPortal = () => {
 
               return (
                 <Col md={6} lg={4} key={exam.id}>
-                  <div className={`exam-card${isExpiringSoon ? ' exam-card-expiring' : ''}`}>
+                  <div className={`exam-card${isExpiringSoon ? ' exam-card-expiring' : ''}`} style={{ background: '#fff', padding: 20 }}>
                     <div className="d-flex justify-content-between align-items-start mb-3">
                       <div style={{
                         width: 42,
                         height: 42,
                         borderRadius: 10,
-                        background: isExpiringSoon ? '#fff8e1' : '#F3E5F5',
+                        background: isExpiringSoon ? 'var(--ep-warning-soft)' : 'var(--ep-brand-soft)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -360,7 +347,7 @@ const ExamPortal = () => {
                       {getStatusBadge(exam)}
                     </div>
 
-                    <h6 style={{ fontWeight: 700, color: '#2D0040', marginBottom: 6 }}>
+                    <h6 style={{ fontWeight: 700, color: 'var(--ep-ink)', marginBottom: 6, fontSize: 15 }}>
                       {exam.title}
                     </h6>
 
@@ -372,13 +359,13 @@ const ExamPortal = () => {
                         gap: 8,
                         marginBottom: 10,
                       }}>
-                        <span style={{ fontSize: 12, color: '#888', fontWeight: 600 }}>Code:</span>
+                        <span style={{ fontSize: 12, color: 'var(--ep-muted)', fontWeight: 600 }}>Code:</span>
                         <span style={{
                           fontFamily: 'monospace',
                           fontWeight: 800,
                           fontSize: 14,
-                          color: '#5B0A7B',
-                          background: '#F3E5F5',
+                          color: 'var(--ep-brand)',
+                          background: 'var(--ep-brand-soft)',
                           padding: '2px 10px',
                           borderRadius: 6,
                           letterSpacing: 2,
@@ -399,19 +386,19 @@ const ExamPortal = () => {
                             fontSize: 14,
                             padding: '2px 4px',
                             borderRadius: 4,
-                            color: '#667eea',
+                            color: 'var(--ep-brand)',
                           }}
                         >📋</button>
                       </div>
                     )}
 
                     {cleanExamDescription(exam.description) && (
-                      <p style={{ fontSize: 13, color: '#666', marginBottom: 12, lineHeight: 1.5 }}>
+                      <p style={{ fontSize: 13, color: 'var(--ep-muted)', marginBottom: 12, lineHeight: 1.5 }}>
                         {cleanExamDescription(exam.description)}
                       </p>
                     )}
 
-                    <div className="d-flex justify-content-between" style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>
+                    <div className="d-flex justify-content-between" style={{ fontSize: 13, color: 'var(--ep-ink-2)', marginBottom: 8, fontWeight: 500 }}>
                       <span>📊 {exam.total_questions} Questions</span>
                       <span>⏱ {exam.duration} min</span>
                     </div>
@@ -423,17 +410,17 @@ const ExamPortal = () => {
                       return (
                         <div style={{
                           marginTop: 12,
-                          padding: 8,
-                          background: '#fff3e0',
-                          border: '1px solid #ffb74d',
+                          padding: 10,
+                          background: 'var(--ep-warning-soft)',
+                          border: '1px solid #fde68a',
                           borderRadius: 8,
                           fontSize: 12,
-                          color: '#e65100',
+                          color: 'var(--ep-warning)',
                           fontWeight: 600,
                           textAlign: 'center'
                         }}>
                           ⏳ Scheduled to Open On:<br/>
-                          <strong>{startTime.toLocaleString('en-IN', {
+                          <strong style={{ color: 'var(--ep-ink-2)' }}>{startTime.toLocaleString('en-IN', {
                             day: '2-digit',
                             month: 'short',
                             year: 'numeric',
@@ -447,14 +434,14 @@ const ExamPortal = () => {
                     {exam.deadline && (
                       <div style={{ 
                         marginTop: 12,
-                        padding: 8,
-                        background: isExpiringSoon ? '#fff8e1' : '#f8f9fa',
+                        padding: 10,
+                        background: isExpiringSoon ? 'var(--ep-danger-soft)' : 'var(--ep-surface-2)',
                         borderRadius: 8,
                         fontSize: 12,
-                        color: isExpiringSoon ? '#e65100' : '#666',
+                        color: isExpiringSoon ? 'var(--ep-danger)' : 'var(--ep-muted)',
                         fontWeight: isExpiringSoon ? 700 : 400
                       }}>
-                        <div style={{ marginBottom: 4 }}>
+                        <div style={{ marginBottom: 4, color: 'var(--ep-ink-2)' }}>
                           📅 Deadline: {new Date(exam.deadline).toLocaleString('en-IN', {
                             day: '2-digit',
                             month: 'short',
@@ -464,7 +451,7 @@ const ExamPortal = () => {
                           })}
                         </div>
                         {isExpiringSoon && (
-                          <div style={{ color: '#e53935', fontWeight: 700 }}>
+                          <div style={{ color: 'var(--ep-danger)', fontWeight: 700 }}>
                             ⚠️ Time left: {getTimeRemaining(exam.deadline)}
                           </div>
                         )}
@@ -474,11 +461,11 @@ const ExamPortal = () => {
                     {activeTab === 'ongoing' && !exam.deadline && (
                       <div style={{ 
                         marginTop: 12,
-                        padding: 8,
-                        background: '#e8f5e9',
+                        padding: 10,
+                        background: 'var(--ep-success-soft)',
                         borderRadius: 8,
                         fontSize: 12,
-                        color: '#2e7d32',
+                        color: 'var(--ep-success)',
                         fontWeight: 600,
                         textAlign: 'center'
                       }}>
@@ -494,13 +481,13 @@ const ExamPortal = () => {
                           <div style={{
                             width: '100%',
                             marginTop: 12,
-                            background: '#e8f5e9',
-                            border: '1px solid #4caf50',
-                            borderRadius: 8,
+                            background: 'var(--ep-success-soft)',
+                            border: '1.5px solid var(--ep-success)',
+                            borderRadius: 10,
                             padding: '10px',
-                            fontWeight: 600,
-                            fontSize: 14,
-                            color: '#2e7d32',
+                            fontWeight: 700,
+                            fontSize: 13.5,
+                            color: 'var(--ep-success)',
                             textAlign: 'center'
                           }}>
                             ✓ Completed
@@ -509,7 +496,8 @@ const ExamPortal = () => {
                       }
                       
                       return (
-                        <Button
+                        <button
+                          className="ep-btn ep-btn-primary ep-btn-block"
                           onClick={() => {
                             setExamCode(exam.exam_code || '');
                             setTimeout(() => {
@@ -521,38 +509,25 @@ const ExamPortal = () => {
                             }, 100);
                           }}
                           style={{
-                            width: '100%',
                             marginTop: 12,
-                            background: isExpiringSoon ? '#ff9800' : 'linear-gradient(135deg, #667eea, #764ba2)',
-                            border: 'none',
-                            borderRadius: 8,
-                            padding: '10px',
-                            fontWeight: 600,
-                            fontSize: 14
+                            background: isExpiringSoon ? 'var(--ep-danger)' : 'var(--ep-brand)',
                           }}
                         >
                           {isExpiringSoon ? '⚡ Auto-fill Code' : 'Get Exam Code'}
-                        </Button>
+                        </button>
                       );
                     })()}
 
                     {activeTab === 'upcoming' && (
-                      <Button
+                      <button
+                        className="ep-btn ep-btn-outline ep-btn-block"
                         disabled={true}
                         style={{
-                          width: '100%',
                           marginTop: 12,
-                          background: '#e0e0e0',
-                          border: 'none',
-                          borderRadius: 8,
-                          padding: '10px',
-                          fontWeight: 600,
-                          fontSize: 14,
-                          color: '#666'
                         }}
                       >
                         ⏳ Available Soon
-                      </Button>
+                      </button>
                     )}
                   </div>
                 </Col>
@@ -562,11 +537,11 @@ const ExamPortal = () => {
         )}
 
         {activeTab === 'ongoing' && (
-          <div className="code-entry-section">
+          <div className="code-entry-section mt-18">
             <Row className="align-items-center">
               <Col md={6}>
-                <h5>Enter Exam Code</h5>
-                <p>
+                <h5 style={{ fontWeight: 800 }}>Enter Exam Code</h5>
+                <p style={{ opacity: 0.9, fontSize: 13.5 }}>
                   If you have an exam code, enter it below to start your exam.
                   Codes are typically sent via email to {studentEmail}.
                 </p>
@@ -588,11 +563,11 @@ const ExamPortal = () => {
                       onChange={(e) => setExamCode(e.target.value.toUpperCase())}
                       maxLength={12}
                     />
-                    <Button type="submit" className="btn-enter-exam" disabled={codeLoading}>
+                    <button type="submit" className="ep-btn ep-btn-primary" disabled={codeLoading} style={{ padding: '0 24px', background: '#fff', color: 'var(--ep-brand)' }}>
                       {codeLoading ? '...' : 'Enter'}
-                    </Button>
+                    </button>
                   </div>
-                  <small style={{ color: 'rgba(255,255,255,0.6)', marginTop: 8, display: 'block' }}>
+                  <small style={{ color: 'rgba(255,255,255,0.7)', marginTop: 8, display: 'block', fontSize: 12 }}>
                     Check your email for the exam code
                   </small>
                 </Form>
@@ -600,7 +575,7 @@ const ExamPortal = () => {
             </Row>
           </div>
         )}
-      </div>
+      </main>
 
       {/* Reminder Modal */}
       <Modal 
@@ -610,77 +585,65 @@ const ExamPortal = () => {
         className="modal-reminder"
       >
         <Modal.Body style={{ padding: 0 }}>
-          <div className="reminder-modal-content">
-            <div className="reminder-modal-header">
+          <div className="reminder-modal-content" style={{ borderRadius: 16, overflow: 'hidden' }}>
+            <div className="reminder-modal-header" style={{ padding: 32, background: 'var(--ep-danger-soft)', textAlign: 'center' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>⚠️</div>
-              <h4>Exam Reminder</h4>
-              <p>
+              <h4 style={{ color: 'var(--ep-danger)', fontWeight: 800 }}>Exam Reminder</h4>
+              <p style={{ color: 'var(--ep-ink-2)', fontSize: 13.5, margin: 0 }}>
                 The following exam{reminderExams.length > 1 ? 's are' : ' is'} expiring soon!
               </p>
             </div>
 
-            <div className="reminder-exam-list">
+            <div className="reminder-exam-list" style={{ padding: 20, background: '#fff' }}>
               {reminderExams.map(exam => (
-                <div key={exam.id} className="reminder-exam-item">
+                <div key={exam.id} className="reminder-exam-item" style={{ borderBottom: '1px solid var(--ep-line)', padding: '16px 0' }}>
                   <div className="reminder-exam-info">
-                    <div className="reminder-exam-title">{exam.title}</div>
-                    <div className="reminder-exam-code">
+                    <div className="reminder-exam-title" style={{ fontWeight: 700, color: 'var(--ep-ink)' }}>{exam.title}</div>
+                    <div className="reminder-exam-code" style={{ color: 'var(--ep-muted)', fontSize: 12.5 }}>
                       Questions: {exam.total_questions} | Duration: {exam.duration} min
                     </div>
-                    <div className="reminder-exam-time">
+                    <div className="reminder-exam-time" style={{ color: 'var(--ep-danger)', fontSize: 12.5, marginTop: 4 }}>
                       Time remaining: <strong>{getTimeRemaining(exam.deadline)}</strong>
                     </div>
                   </div>
-                  <div className="reminder-exam-actions">
-                    <Button
-                      size="sm"
-                      style={{
-                        borderRadius: 8,
-                        fontWeight: 600,
-                        background: '#5B0A7B',
-                        border: 'none',
-                        color: '#fff'
-                      }}
+                  <div className="reminder-exam-actions" style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    <button
+                      className="ep-btn ep-btn-primary"
+                      style={{ fontSize: 12.5, padding: '8px 16px' }}
                       onClick={() => {
                         setShowReminderModal(false);
                         navigate(`/exam/${exam.id}`);
                       }}
                     >
                       Start Exam
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline-secondary"
-                      style={{ borderRadius: 8, fontWeight: 600 }}
+                    </button>
+                    <button
+                      className="ep-btn ep-btn-outline"
+                      style={{ fontSize: 12.5, padding: '8px 16px' }}
                       onClick={() => dismissReminder(exam.id)}
                     >
                       Dismiss
-                    </Button>
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="reminder-modal-footer">
-              <Button
-                variant="outline-secondary"
+            <div className="reminder-modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: 18, background: 'var(--ep-surface-2)', borderTop: '1px solid var(--ep-line)' }}>
+              <button
+                className="ep-btn ep-btn-outline"
                 onClick={dismissAllReminders}
-                style={{ borderRadius: 10, fontWeight: 600, padding: '8px 24px' }}
+                style={{ padding: '8px 18px', fontSize: 13 }}
               >
                 Dismiss All
-              </Button>
-              <Button
+              </button>
+              <button
+                className="ep-btn ep-btn-primary"
                 onClick={() => setShowReminderModal(false)}
-                style={{
-                  borderRadius: 10,
-                  fontWeight: 600,
-                  padding: '8px 24px',
-                  background: '#5B0A7B',
-                  border: 'none'
-                }}
+                style={{ padding: '8px 18px', fontSize: 13 }}
               >
                 Close
-              </Button>
+              </button>
             </div>
           </div>
         </Modal.Body>
