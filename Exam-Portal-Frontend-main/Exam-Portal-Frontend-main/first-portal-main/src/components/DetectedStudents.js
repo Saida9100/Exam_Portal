@@ -1,4 +1,5 @@
 /* eslint-disable */
+// src/components/DetectedStudents.js
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button, Badge } from 'react-bootstrap';
@@ -59,7 +60,6 @@ const DetectedStudents = () => {
   };
 
   const getRequestStatus = (attemptId) => {
-    // Match by 'result' type — same type used in ViewResults so both pages stay in sync
     const req = deletionRequests.find(
       r => String(r.target_id) === String(attemptId) && r.type === 'result'
     );
@@ -88,7 +88,6 @@ const DetectedStudents = () => {
     const id = result.attempt_id || result.id;
     const name = result.student_name;
 
-    // Super Admin can delete directly
     if (admin?.role === 'super_admin') {
       if (!window.confirm(`Delete all violation data for "${name}"? This cannot be undone.`)) return;
       setRequestingIds(prev => ({ ...prev, [id]: true }));
@@ -107,7 +106,6 @@ const DetectedStudents = () => {
         setRequestingIds(prev => ({ ...prev, [id]: false }));
       }
     } else {
-      // Regular Admin must request approval
       if (!window.confirm(`Request deletion of violation record for "${name}"? The Super Admin must approve this.`)) return;
       setRequestingIds(prev => ({ ...prev, [id]: true }));
       setError('');
@@ -136,49 +134,59 @@ const DetectedStudents = () => {
   );
 
   const finalFilteredResults = filterByDateRange(searchFilteredResults, exportFilters.startDate, exportFilters.endDate, 'submitted_at');
+  const adminInitial = admin?.name?.charAt(0)?.toUpperCase() || 'A';
 
   const getStatusBadge = (status) => {
     if (!status) return null;
-    const colors = {
-      'Pending Approval': { bg: '#fff3e0', color: '#e65100', border: '#ffcc80' },
-      'Approved': { bg: '#e8f5e9', color: '#2e7d32', border: '#a5d6a7' },
-      'Rejected': { bg: '#ffebee', color: '#c62828', border: '#ef9a9a' },
+    const styles = {
+      'Pending Approval': 'ep-badge-warning',
+      'Approved': 'ep-badge-success',
+      'Rejected': 'ep-badge-danger',
     };
-    const style = colors[status] || colors['Pending Approval'];
+    const styleClass = styles[status] || 'ep-badge-warning';
     return (
-      <span style={{
-        fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
-        background: style.bg, color: style.color, border: `1px solid ${style.border}`
-      }}>
+      <span className={`ep-badge ${styleClass}`} style={{ fontSize: 11.5 }}>
         {status === 'Pending Approval' ? '⏳ Pending Approval' : status === 'Approved' ? '✅ Approved' : '❌ Rejected'}
       </span>
     );
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f5f5f5' }}>
-      <SharedAdminSidebar />
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <SharedAdminSidebar active="detected-students" onLogout={() => apiService.logout()} />
 
-      <div style={{ flex: 1, padding: 32, marginLeft: '250px' }}>
+      <main className="dashboard-main ep-page" style={{ flex: 1, minWidth: 0 }}>
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 24, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <Button variant="link" onClick={() => navigate(-1)} style={{ padding: 0, color: '#333', textDecoration: 'none', fontSize: 24 }}>
-                ⬅️
-              </Button>
-              <h2 style={{ margin: 0, fontWeight: 700, color: '#2D0040', whiteSpace: 'nowrap' }}>Detected Students</h2>
-            </div>
-            <div style={{ width: '100%', maxWidth: 500 }}>
-              <input
-                placeholder="🔍  Search by student, email or exam..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc', fontSize: 14, width: '100%', outline: 'none' }}
-              />
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Security Center</div>
+            <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button onClick={() => navigate(-1)} style={{ fontSize: 20, cursor: 'pointer', border: 'none', background: 'none' }}>⬅️</button>
+              Detected Students
+            </h1>
+            <p>Monitor integrity logs, visual snapshots, and student policy infractions.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{admin?.email}</span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        </div>
+
+        {/* Filters and Toolbar */}
+        <div className="toolbar" style={{ marginBottom: 18 }}>
+          <div className="pill-tabs" style={{ flex: 1, maxWidth: 460 }}>
+            <input
+              placeholder="🔍  Search by candidate name, email or exam title..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="ep-input"
+              style={{ border: 'none', padding: '8px 14px' }}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             {results.length > 0 && (
               <ExportToolbar
                 data={finalFilteredResults}
@@ -190,140 +198,127 @@ const DetectedStudents = () => {
               />
             )}
             {results.length > 0 && admin?.role === 'super_admin' && (
-              <Button variant="danger" onClick={handleClearData} style={{ borderRadius: 8, padding: '8px 16px', fontWeight: 600 }}>
-                🗑️ Clear All Data
-              </Button>
+              <button onClick={handleClearData} className="ep-btn ep-btn-outline" style={{ color: 'var(--ep-danger)', borderColor: 'var(--ep-danger-soft)' }}>
+                🗑️ Clear All Logs
+              </button>
             )}
           </div>
         </div>
 
-        {/* Info banner for regular admins */}
+        {/* Regular Admin Notes */}
         {admin?.role !== 'super_admin' && (
-          <div style={{ padding: '12px 20px', background: '#e8f0fe', borderLeft: '4px solid #3b5bdb', borderRadius: 8, marginBottom: 24, fontSize: 13, color: '#1a237e' }}>
-            <strong>ℹ️ Note:</strong> As an Admin, you can <strong>request</strong> deletion of violation records. The Super Admin must approve before any data is removed.
+          <div className="ep-alert tips" style={{ background: 'var(--ep-info-soft)', color: '#0369a1', border: '1px solid #bae6fd', padding: 12, borderRadius: 10, fontSize: 13, marginBottom: 18 }}>
+            <strong>ℹ️ Student Deletion Requests:</strong> Regular faculty admins request deletions of candidate results/violations. Final purging requires approval from the Super Admin.
           </div>
         )}
 
-        {/* Alerts */}
+        {/* Alert Notifications */}
         {error && (
-          <div style={{ padding: 16, background: '#fff5f5', border: '1px solid #ffcdd2', color: '#c62828', borderRadius: 8, marginBottom: 24 }}>
-            {error}
+          <div className="ep-alert" style={{ background: 'var(--ep-danger-soft)', color: 'var(--ep-danger)', border: '1px solid #fecaca', padding: 14, borderRadius: 10, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13.5 }}>{error}</span>
+            <button onClick={() => setError('')} style={{ background: 'none', border: 'none', color: 'var(--ep-danger)', fontSize: 18, fontWeight: 'bold' }}>×</button>
           </div>
         )}
         {success && (
-          <div style={{ padding: 16, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', borderRadius: 8, marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>{success}</span>
-            <button onClick={() => setSuccess('')} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#15803d' }}>×</button>
+          <div className="ep-alert" style={{ background: 'var(--ep-success-soft)', color: 'var(--ep-success)', border: '1px solid #bbf7d0', padding: 14, borderRadius: 10, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13.5 }}>{success}</span>
+            <button onClick={() => setSuccess('')} style={{ background: 'none', border: 'none', color: 'var(--ep-success)', fontSize: 18, fontWeight: 'bold' }}>×</button>
           </div>
         )}
 
         {loading ? (
-          <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>Loading detected students...</div>
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--ep-muted)' }}>
+            <div className="spinner-border spinner-border-sm text-primary me-2" />
+            Loading security flags...
+          </div>
         ) : finalFilteredResults.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 60, background: '#fff', borderRadius: 12, border: '1px solid #e0e0e0', color: '#888' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-            <h4 style={{ color: '#333' }}>No Violations Detected!</h4>
-            <p>None of the matching students have triggered any proctoring flags.</p>
+          <div className="ep-empty">
+            <div style={{ fontSize: 56, marginBottom: 12 }}>🛡️</div>
+            <h4>No Violations Detected</h4>
+            <p>None of the active candidate attempts have triggered security flags.</p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {finalFilteredResults.map((result) => {
               const id = result.attempt_id || result.id;
               const requestStatus = getRequestStatus(id);
               const isRequesting = requestingIds[id];
 
               return (
-                <Card key={id} style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
-                  <Card.Header style={{ background: '#fff5f5', borderBottom: '1px solid #ffcdd2', padding: 20 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <h5 style={{ margin: 0, color: '#b71c1c', fontWeight: 700 }}>{result.student_name}</h5>
-                        <div style={{ color: '#d32f2f', fontSize: 13, marginTop: 4 }}>{result.student_email}</div>
-                      </div>
-                      <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <Badge bg="danger" style={{ fontSize: 13, padding: '6px 12px', borderRadius: 20 }}>
-                            {result.violations.length} Violations
-                          </Badge>
+                <div className="ep-card" key={id} style={{ overflow: 'hidden' }}>
+                  <div className="ep-card-head" style={{ background: 'var(--ep-danger-soft)', borderBottom: '1px solid #fecaca', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                    <div>
+                      <h3 style={{ margin: 0, color: 'var(--ep-danger)', fontSize: 15, fontWeight: 800 }}>{result.student_name}</h3>
+                      <p style={{ margin: '2px 0 0', color: 'var(--ep-danger)', opacity: 0.95, fontSize: 12 }}>{result.student_email} • Exam: <strong>{result.exam_title}</strong></p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span className="ep-badge ep-badge-danger" style={{ fontWeight: 800 }}>
+                        🚨 {result.violations.length} Violation{result.violations.length !== 1 ? 's' : ''}
+                      </span>
 
-                          {/* Delete / Request Delete button */}
-                          {admin?.role === 'super_admin' ? (
-                            <Button
-                              variant="outline-danger"
-                              size="sm"
-                              disabled={isRequesting}
-                              onClick={() => handleDelete(result)}
-                              style={{ borderRadius: 6, fontWeight: 600, fontSize: 12 }}
-                            >
-                              {isRequesting ? 'Deleting...' : 'Delete'}
-                            </Button>
-                          ) : (
-                            requestStatus === 'Pending Approval' ? (
-                              <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, background: '#fff3e0', color: '#e65100', border: '1px solid #ffcc80' }}>
-                                ⏳ Pending Approval
-                              </span>
-                            ) : requestStatus === 'Approved' ? (
-                              <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7' }}>
-                                ✅ Delete Approved
-                              </span>
-                            ) : (
-                              <Button
-                                variant="outline-warning"
-                                size="sm"
-                                disabled={isRequesting}
-                                onClick={() => handleDelete(result)}
-                                style={{ borderRadius: 6, fontWeight: 600, fontSize: 12, color: '#e65100', borderColor: '#e65100' }}
-                              >
-                                {isRequesting ? 'Requesting...' : requestStatus === 'Rejected' ? '🔄 Re-request Delete' : '🗑️ Request Delete'}
-                              </Button>
-                            )
-                          )}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#888' }}>
-                          Exam: {result.exam_title}
-                        </div>
-                      </div>
+                      {admin?.role === 'super_admin' ? (
+                        <button
+                          disabled={isRequesting}
+                          onClick={() => handleDelete(result)}
+                          className="ep-btn ep-btn-outline"
+                          style={{ padding: '6px 14px', fontSize: 12, color: 'var(--ep-danger)', borderColor: 'var(--ep-danger-soft)' }}
+                        >
+                          {isRequesting ? 'Deleting...' : 'Delete'}
+                        </button>
+                      ) : (
+                        requestStatus === 'Pending Approval' ? (
+                          getStatusBadge(requestStatus)
+                        ) : requestStatus === 'Approved' ? (
+                          getStatusBadge(requestStatus)
+                        ) : (
+                          <button
+                            disabled={isRequesting}
+                            onClick={() => handleDelete(result)}
+                            className="ep-btn ep-btn-outline"
+                            style={{ padding: '6px 14px', fontSize: 12, color: 'var(--ep-warning)', borderColor: 'var(--ep-warning-soft)' }}
+                          >
+                            {isRequesting ? 'Requesting...' : requestStatus === 'Rejected' ? '🔄 Re-request Delete' : '🗑️ Request Delete'}
+                          </button>
+                        )
+                      )}
                     </div>
-                  </Card.Header>
-                  <Card.Body style={{ padding: 20 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16, color: '#333' }}>
-                      Violation Log
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
+                  </div>
+                  <div style={{ padding: 20 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14, color: 'var(--ep-ink)' }}>Proctoring Snapshot Stream</div>
+                    <div className="ep-grid ep-grid-4" style={{ gap: 16 }}>
                       {result.violations.map((v, i) => (
-                        <div key={i} style={{ background: '#fafafa', borderRadius: 12, border: '1px solid #eee', padding: 16 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                            <div style={{ fontWeight: 600, color: '#2D0040', fontSize: 14 }}>{v.type}</div>
-                            <div style={{ fontSize: 12, color: '#888' }}>
+                        <div key={i} style={{ background: 'var(--ep-surface-2)', borderRadius: 10, border: '1px solid var(--ep-line)', padding: 12 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <div style={{ fontWeight: 700, color: 'var(--ep-ink)', fontSize: 12.5 }}>{v.type}</div>
+                            <div style={{ fontSize: 11, color: 'var(--ep-muted)' }}>
                               {new Date(v.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                             </div>
                           </div>
                           {v.image ? (
-                            <div style={{ width: '100%', height: 200, background: '#000', borderRadius: 8, overflow: 'hidden', position: 'relative' }}>
+                            <div style={{ width: '100%', height: 140, background: '#0f172a', borderRadius: 8, overflow: 'hidden' }}>
                               <img
                                 src={v.image}
-                                alt="Violation snapshot"
+                                alt="Violation snapshots"
                                 style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                               />
                             </div>
                           ) : (
-                            <div style={{ background: '#f5f5f5', padding: 20, textAlign: 'center', borderRadius: 8, color: '#888', fontSize: 12 }}>
+                            <div style={{ background: '#fff', border: '1px dashed var(--ep-line)', height: 140, display: 'grid', placeItems: 'center', borderRadius: 8, color: 'var(--ep-muted)', fontSize: 11.5 }}>
                               No snapshot captured
                             </div>
                           )}
                         </div>
                       ))}
                     </div>
-                  </Card.Body>
-                </Card>
+                  </div>
+                </div>
               );
             })}
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 };
 
 export default DetectedStudents;
-
