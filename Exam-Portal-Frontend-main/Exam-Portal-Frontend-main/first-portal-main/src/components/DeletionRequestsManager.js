@@ -1,16 +1,5 @@
-// src/components/superadmin/DeletionRequestsManager.js
-//
-// ✅ NEW: A dedicated, full-page UI for the Super Admin to manage all
-//    pending deletion requests (students, exams, results).
-//
-//    Includes:
-//      • Pending tab (needs action)
-//      • Approved tab (history)
-//      • Rejected tab (history)
-//      • Approve / Reject buttons per row
-//      • Inline confirm dialog before destructive actions
-//      • Type, target, requester, reason, timestamp
-
+/* eslint-disable */
+// src/components/DeletionRequestsManager.js
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom'; 
 import { Modal, Button } from 'react-bootstrap';
@@ -18,41 +7,31 @@ import apiService from '../services/api';
 import SharedAdminSidebar from './SharedAdminSidebar';
 
 const TYPE_META = {
-  student: { label: 'Student', icon: '👤', color: '#1565c0', bg: '#e3f2fd' },
-  exam:    { label: 'Exam',    icon: '📝', color: '#7B1FA2', bg: '#f3eafd' },
-  result:  { label: 'Result',  icon: '📊', color: '#2e7d32', bg: '#e8f5e9' },
+  student: { label: 'Student', icon: '👤', color: 'var(--ep-info)', bg: 'var(--ep-info-soft)' },
+  exam:    { label: 'Exam',    icon: '📝', color: 'var(--ep-brand)', bg: 'var(--ep-brand-soft)' },
+  result:  { label: 'Result',  icon: '📊', color: 'var(--ep-success)', bg: 'var(--ep-success-soft)' },
 };
 
 const STATUS_META = {
-  'Pending Approval': { color: '#e65100', bg: '#fff3e0', icon: '⏳' },
-  'Approved':         { color: '#2e7d32', bg: '#e8f5e9', icon: '✅' },
-  'Rejected':         { color: '#c62828', bg: '#ffebee', icon: '❌' },
+  'Pending Approval': { color: 'var(--ep-warning)', bg: 'var(--ep-warning-soft)', icon: '⏳' },
+  'Approved':         { color: 'var(--ep-success)', bg: 'var(--ep-success-soft)', icon: '✅' },
+  'Rejected':         { color: 'var(--ep-danger)', bg: 'var(--ep-danger-soft)', icon: '❌' },
 };
 
 const TypeBadge = ({ type }) => {
-  const m = TYPE_META[type] || { label: type, icon: '📦', color: '#555', bg: '#eee' };
+  const m = TYPE_META[type] || { label: type, icon: '📦', color: 'var(--ep-muted)', bg: 'var(--ep-surface-2)' };
   return (
-    <span style={{
-      background: m.bg, color: m.color,
-      padding: '4px 10px', borderRadius: 999,
-      fontSize: 12, fontWeight: 700,
-      display: 'inline-flex', alignItems: 'center', gap: 6,
-    }}>
-      <span>{m.icon}</span><span>{m.label}</span>
+    <span className="ep-badge" style={{ background: m.bg, color: m.color, fontWeight: 700, fontSize: 11.5 }}>
+      <span>{m.icon}</span>&nbsp;{m.label}
     </span>
   );
 };
 
 const StatusBadge = ({ status }) => {
-  const m = STATUS_META[status] || { color: '#555', bg: '#eee', icon: '•' };
+  const m = STATUS_META[status] || { color: 'var(--ep-muted)', bg: 'var(--ep-surface-2)', icon: '•' };
   return (
-    <span style={{
-      background: m.bg, color: m.color,
-      padding: '4px 10px', borderRadius: 999,
-      fontSize: 12, fontWeight: 700,
-      display: 'inline-flex', alignItems: 'center', gap: 6,
-    }}>
-      <span>{m.icon}</span><span>{status}</span>
+    <span className="ep-badge" style={{ background: m.bg, color: m.color, fontWeight: 700, fontSize: 11.5 }}>
+      <span>{m.icon}</span>&nbsp;{status}
     </span>
   );
 };
@@ -84,7 +63,6 @@ const DeletionRequestsManager = () => {
 
   useEffect(() => {
     fetchRequests();
-    // refresh every 30s so the badge stays current
     const t = setInterval(fetchRequests, 30000);
     return () => clearInterval(t);
   }, [fetchRequests]);
@@ -115,177 +93,128 @@ const DeletionRequestsManager = () => {
   });
 
   const pendingCount = requests.filter((r) => r.status === 'Pending Approval').length;
-
-  const tabStyle = (t) => ({
-    padding: '10px 22px',
-    borderRadius: 10,
-    fontWeight: 700,
-    fontSize: 14,
-    border: 'none',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    background: tab === t ? 'linear-gradient(135deg, #5B0A7B, #7B1FA2)' : '#f0f0f5',
-    color: tab === t ? '#fff' : '#555',
-    boxShadow: tab === t ? '0 4px 14px rgba(91,10,123,0.3)' : 'none',
-    position: 'relative',
-  });
-
   const superAdmin = apiService.getUser();
   const email = superAdmin?.email || 'Super Admin';
+  const name = superAdmin?.name || 'Super Admin';
   const initial = superAdmin?.name ? superAdmin.name.charAt(0).toUpperCase() : 'S';
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f7fb' }}>
-      <SharedAdminSidebar
-        onLogout={() => apiService.logout()}
-        admin={superAdmin}
-      />
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <SharedAdminSidebar onLogout={() => apiService.logout()} admin={superAdmin} />
 
-      <div style={{ marginLeft: 260, padding: '24px 28px' }}>
+      <main className="dashboard-main ep-page" style={{ flex: 1, minWidth: 0 }}>
         {/* Header */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          marginBottom: 24,
-        }}>
+        <div className="ep-page-header">
           <div>
-            <h1 style={{ margin: 0, color: '#2c2c54', fontSize: 26, fontWeight: 800 }}>
-              🔔 Deletion Requests
+            <div className="ep-kicker">Platform Audit</div>
+            <h1>
+              Deletion Requests
               {pendingCount > 0 && (
-                <span style={{
-                  marginLeft: 14, background: '#e53935', color: '#fff',
-                  padding: '4px 12px', borderRadius: 999,
-                  fontSize: 14, fontWeight: 700,
-                  verticalAlign: 'middle',
-                }}>
-                  {pendingCount} pending
+                <span className="ep-badge ep-badge-danger" style={{ marginLeft: 12, verticalAlign: 'middle', fontSize: 13, fontWeight: 800 }}>
+                  ⏳ {pendingCount} Pending Action
                 </span>
               )}
             </h1>
-            <div style={{ color: '#7a7a93', fontSize: 13, marginTop: 4 }}>
-              Review and approve deletion requests submitted by admins.
-            </div>
+            <p>Review and approve deletion requests submitted by administrators.</p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 13, color: '#555' }}>{email}</span>
-            <div style={{
-              width: 40, height: 40, borderRadius: '50%',
-              background: 'linear-gradient(135deg, #5B0A7B, #7B1FA2)',
-              color: '#fff', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', fontWeight: 700,
-            }}>{initial}</div>
+          <div className="ep-user-chip">
+            <div className="avatar">{initial}</div>
+            <div>
+              <strong>{name}</strong>
+              <span>{email}</span>
+            </div>
           </div>
         </div>
 
         {/* Alerts */}
         {success && (
-          <div style={{
-            background: '#e8f5e9', color: '#2e7d32',
-            padding: '12px 16px', borderRadius: 10,
-            marginBottom: 16, display: 'flex', justifyContent: 'space-between',
-            alignItems: 'center', fontSize: 14,
-          }}>
-            <span>{success}</span>
-            <button onClick={() => setSuccess('')}
-              style={{ background: 'none', border: 'none', color: '#2e7d32',
-                       fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
+          <div className="ep-alert" style={{ background: 'var(--ep-success-soft)', color: 'var(--ep-success)', border: '1px solid #bbf7d0', padding: 14, borderRadius: 10, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13.5 }}>{success}</span>
+            <button onClick={() => setSuccess('')} style={{ background: 'none', border: 'none', color: 'var(--ep-success)', fontSize: 18, fontWeight: 'bold' }}>×</button>
           </div>
         )}
         {error && (
-          <div style={{
-            background: '#ffebee', color: '#c62828',
-            padding: '12px 16px', borderRadius: 10,
-            marginBottom: 16, display: 'flex', justifyContent: 'space-between',
-            alignItems: 'center', fontSize: 14,
-          }}>
-            <span>{error}</span>
-            <button onClick={() => setError('')}
-              style={{ background: 'none', border: 'none', color: '#c62828',
-                       fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
+          <div className="ep-alert" style={{ background: 'var(--ep-danger-soft)', color: 'var(--ep-danger)', border: '1px solid #fecaca', padding: 14, borderRadius: 10, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13.5 }}>{error}</span>
+            <button onClick={() => setError('')} style={{ background: 'none', border: 'none', color: 'var(--ep-danger)', fontSize: 18, fontWeight: 'bold' }}>×</button>
           </div>
         )}
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-          <button style={tabStyle('pending')} onClick={() => setTab('pending')}>
-            ⏳ Pending ({requests.filter((r) => r.status === 'Pending Approval').length})
+        {/* Tabs and Actions */}
+        <div className="toolbar" style={{ marginBottom: 18 }}>
+          <div className="pill-tabs" style={{ flexWrap: 'wrap' }}>
+            <button className={tab === 'pending' ? 'active' : ''} onClick={() => setTab('pending')}>
+              ⏳ Pending ({requests.filter((r) => r.status === 'Pending Approval').length})
+            </button>
+            <button className={tab === 'approved' ? 'active' : ''} onClick={() => setTab('approved')}>
+              ✅ Approved ({requests.filter((r) => r.status === 'Approved').length})
+            </button>
+            <button className={tab === 'rejected' ? 'active' : ''} onClick={() => setTab('rejected')}>
+              ❌ Rejected ({requests.filter((r) => r.status === 'Rejected').length})
+            </button>
+            <button className={tab === 'all' ? 'active' : ''} onClick={() => setTab('all')}>
+              📋 All ({requests.length})
+            </button>
+          </div>
+          <button onClick={fetchRequests} className="ep-btn ep-btn-outline" style={{ padding: '8px 16px', fontSize: 13 }}>
+            🔄 Refresh
           </button>
-          <button style={tabStyle('approved')} onClick={() => setTab('approved')}>
-            ✅ Approved ({requests.filter((r) => r.status === 'Approved').length})
-          </button>
-          <button style={tabStyle('rejected')} onClick={() => setTab('rejected')}>
-            ❌ Rejected ({requests.filter((r) => r.status === 'Rejected').length})
-          </button>
-          <button style={tabStyle('all')} onClick={() => setTab('all')}>
-            📋 All ({requests.length})
-          </button>
-          <button onClick={fetchRequests}
-            style={{
-              padding: '10px 16px', borderRadius: 10,
-              background: '#fff', border: '1.5px solid #e0e0e0',
-              color: '#555', fontWeight: 600, fontSize: 13, cursor: 'pointer',
-            }}
-          >🔄 Refresh</button>
         </div>
 
         {/* List */}
         {loading ? (
-          <div style={{
-            padding: 60, textAlign: 'center', color: '#888', fontSize: 15,
-            background: '#fff', borderRadius: 14,
-          }}>Loading requests…</div>
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--ep-muted)' }}>
+            <div className="spinner-border spinner-border-sm text-primary me-2" />
+            Loading audit requests...
+          </div>
         ) : filtered.length === 0 ? (
-          <div style={{
-            padding: 60, textAlign: 'center', background: '#fff',
-            borderRadius: 14, border: '1px solid #ece9f4',
-          }}>
-            <div style={{ fontSize: 40, marginBottom: 10 }}>📭</div>
-            <div style={{ color: '#888', fontSize: 15 }}>
-              No {tab === 'pending' ? 'pending' : tab} requests.
-            </div>
+          <div className="ep-empty">
+            <div style={{ fontSize: 48, marginBottom: 8 }}>📭</div>
+            <h4>No requests found</h4>
+            <p>There are no {tab === 'pending' ? 'pending' : tab} deletion requests to manage.</p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gap: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {filtered.map((req) => (
-              <div key={req.id} style={{
-                background: '#fff', borderRadius: 14,
-                padding: 20, border: '1px solid #ece9f4',
-                boxShadow: '0 2px 10px rgba(91,10,123,0.04)',
+              <div className="ep-card" key={req.id} style={{
+                padding: 20,
                 display: 'grid',
                 gridTemplateColumns: '1fr auto',
-                gap: 16, alignItems: 'center',
+                gap: 16,
+                alignItems: 'center',
               }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <TypeBadge type={req.type} />
                     <StatusBadge status={req.status} />
                     {req.has_violations && (
-                      <span style={{
-                        background: '#fff8e1', color: '#e65100',
-                        padding: '4px 10px', borderRadius: 999,
-                        fontSize: 12, fontWeight: 700,
-                      }}>⚠️ Has violations</span>
+                      <span className="ep-badge ep-badge-danger" style={{ fontWeight: 800 }}>
+                        ⚠️ Violations Captured
+                      </span>
                     )}
                   </div>
-                  <div style={{ marginTop: 10, fontSize: 16, fontWeight: 700, color: '#2c2c54' }}>
-                    {req.display_name || `${req.type} #${req.target_id}`}
+                  <div style={{ marginTop: 10, fontSize: 16, fontWeight: 700, color: 'var(--ep-ink)' }}>
+                    {req.display_name || `${req.type} ID: #${req.target_id}`}
                   </div>
                   {req.display_subtitle && (
-                    <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>
+                    <div style={{ fontSize: 13, color: 'var(--ep-muted)', marginTop: 2 }}>
                       {req.display_subtitle}
                     </div>
                   )}
                   {req.reason && (
                     <div style={{
-                      marginTop: 10, padding: '8px 12px',
-                      background: '#fafafa', borderRadius: 8,
-                      fontSize: 13, color: '#555',
-                      borderLeft: '3px solid #7B1FA2',
+                      marginTop: 10, padding: '10px 14px',
+                      background: 'var(--ep-surface-2)', borderRadius: 10,
+                      fontSize: 12.5, color: 'var(--ep-ink-2)',
+                      borderLeft: '3px solid var(--ep-brand)',
+                      border: '1px solid var(--ep-line)',
+                      borderLeftColor: 'var(--ep-brand)'
                     }}>
-                      <strong>Reason:</strong> {req.reason}
+                      <strong>Reason for request:</strong> {req.reason}
                     </div>
                   )}
-                  <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
-                    Requested by <strong>{req.requested_by_name || req.requested_by_email || `User #${req.requested_by}`}</strong>
+                  <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--ep-muted)' }}>
+                    Requested by <strong>{req.requested_by_name || req.requested_by_email || `User ID #${req.requested_by}`}</strong>
                     {' • '}
                     {new Date(req.created_at).toLocaleString('en-IN', {
                       day: '2-digit', month: 'short', year: 'numeric',
@@ -302,15 +231,8 @@ const DeletionRequestsManager = () => {
                         id: req.id, action: 'reject',
                         name: req.display_name, type: req.type,
                       })}
-                      style={{
-                        padding: '10px 20px', borderRadius: 10,
-                        background: '#fff', color: '#c62828',
-                        border: '2px solid #ffcdd2',
-                        fontWeight: 700, fontSize: 13, cursor: 'pointer',
-                        transition: 'all 0.2s',
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#ffebee'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
+                      className="ep-btn ep-btn-outline"
+                      style={{ padding: '8px 16px', fontSize: 13, color: 'var(--ep-danger)', borderColor: 'var(--ep-danger-soft)' }}
                     >
                       ❌ Reject
                     </button>
@@ -319,53 +241,43 @@ const DeletionRequestsManager = () => {
                         id: req.id, action: 'approve',
                         name: req.display_name, type: req.type,
                       })}
-                      style={{
-                        padding: '10px 20px', borderRadius: 10,
-                        background: 'linear-gradient(135deg, #2e7d32, #66bb6a)',
-                        color: '#fff', border: 'none',
-                        fontWeight: 700, fontSize: 13, cursor: 'pointer',
-                        transition: 'all 0.2s',
-                        boxShadow: '0 2px 10px rgba(46,125,50,0.25)',
-                      }}
+                      className="ep-btn ep-btn-primary"
+                      style={{ padding: '8px 16px', fontSize: 13, background: 'var(--ep-success)' }}
                     >
                       ✅ Approve
                     </button>
                   </div>
                 ) : (
-                  <div style={{
-                    padding: '8px 14px', borderRadius: 10,
-                    background: '#fafafa', color: '#888',
-                    fontSize: 12, fontWeight: 600,
-                  }}>
-                    {req.status === 'Approved' ? '✓ Processed' : '✗ Declined'}
+                  <div className="ep-badge ep-badge-muted" style={{ padding: '8px 14px', fontSize: 12 }}>
+                    {req.status === 'Approved' ? '✓ Approved' : '✗ Declined'}
                   </div>
                 )}
               </div>
             ))}
           </div>
         )}
-      </div>
+      </main>
 
       {/* Confirm modal */}
       <Modal show={!!confirmModal} onHide={() => !actionLoading && setConfirmModal(null)} centered>
         <Modal.Header closeButton={!actionLoading}
-          style={{ background: confirmModal?.action === 'approve' ? '#e8f5e9' : '#ffebee',
+          style={{ background: confirmModal?.action === 'approve' ? 'var(--ep-success-soft)' : 'var(--ep-danger-soft)',
                    borderBottom: 'none' }}>
-          <Modal.Title style={{ color: confirmModal?.action === 'approve' ? '#2e7d32' : '#c62828' }}>
-            {confirmModal?.action === 'approve' ? '✅ Confirm Approval' : '❌ Confirm Rejection'}
+          <Modal.Title style={{ color: confirmModal?.action === 'approve' ? 'var(--ep-success)' : 'var(--ep-danger)', fontSize: 18, fontWeight: 800 }}>
+            {confirmModal?.action === 'approve' ? '✅ Confirm Deletion Approval' : '❌ Reject Deletion Request'}
           </Modal.Title>
         </Modal.Header>
-        <Modal.Body style={{ fontSize: 15, padding: '20px 24px' }}>
+        <Modal.Body style={{ fontSize: 14.5, padding: '20px 24px', color: 'var(--ep-ink)' }}>
           {confirmModal?.action === 'approve' ? (
             <>
-              Are you sure you want to <strong style={{ color: '#c62828' }}>permanently delete</strong>{' '}
+              Are you sure you want to <strong style={{ color: 'var(--ep-danger)' }}>permanently delete</strong>{' '}
               <strong>{confirmModal?.name}</strong>?
               <div style={{
                 marginTop: 12, padding: '10px 14px',
-                background: '#fff8e1', color: '#e65100',
-                borderRadius: 8, fontSize: 13,
+                background: 'var(--ep-warning-soft)', color: 'var(--ep-warning)',
+                borderRadius: 8, fontSize: 12.5, fontWeight: 600
               }}>
-                ⚠️ This action cannot be undone. All related data will be removed.
+                ⚠️ This action is final and destructive. It will automatically cascade-delete all related results, answers, and violation data.
               </div>
             </>
           ) : (
@@ -374,27 +286,27 @@ const DeletionRequestsManager = () => {
               <strong>{confirmModal?.name}</strong>?
               <div style={{
                 marginTop: 12, padding: '10px 14px',
-                background: '#f5f5f5', color: '#555',
-                borderRadius: 8, fontSize: 13,
+                background: 'var(--ep-surface-2)', color: 'var(--ep-ink-2)',
+                borderRadius: 8, fontSize: 12.5,
               }}>
-                The requesting admin will be able to see this rejection in their dashboard.
+                The requesting faculty administrator will see this refusal state on their request dashboard.
               </div>
             </>
           )}
         </Modal.Body>
         <Modal.Footer style={{ borderTop: 'none', padding: '12px 24px 20px' }}>
           <Button variant="light" onClick={() => setConfirmModal(null)} disabled={actionLoading}
-            style={{ borderRadius: 10, fontWeight: 600 }}>
+            style={{ borderRadius: 10, fontWeight: 600, fontSize: 13.5 }}>
             Cancel
           </Button>
           <Button
             onClick={() => handleAction(confirmModal.id, confirmModal.action, confirmModal.type)}
             disabled={actionLoading}
             style={{
-              borderRadius: 10, fontWeight: 700, padding: '8px 24px',
+              borderRadius: 10, fontWeight: 700, padding: '8px 24px', fontSize: 13.5,
               background: confirmModal?.action === 'approve'
-                ? 'linear-gradient(135deg, #2e7d32, #66bb6a)'
-                : 'linear-gradient(135deg, #c62828, #f44336)',
+                ? 'var(--ep-success)'
+                : 'var(--ep-danger)',
               border: 'none', color: '#fff',
             }}
           >
