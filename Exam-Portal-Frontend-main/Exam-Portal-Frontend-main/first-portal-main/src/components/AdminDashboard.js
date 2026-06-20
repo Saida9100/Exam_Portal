@@ -101,13 +101,18 @@ const AdminDashboard = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <SharedAdminSidebar active="dashboard" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div className="dashboard-topbar">
-          <h3>Admin Dashboard</h3>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{adminEmail}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {adminInitial}
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Faculty Workspace</div>
+            <h1>Admin Dashboard</h1>
+            <p>Monitor portal activity, manage exams, students, and proctoring violations.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{adminEmail}</span>
             </div>
           </div>
         </div>
@@ -913,7 +918,7 @@ const CreateExam = () => {
             </div>
           </Modal.Body>
         </Modal>
-      </div>
+      </main>
     </div>
   );
 };
@@ -1018,13 +1023,18 @@ const ManageExams = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <SharedAdminSidebar active="exams" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div className="dashboard-topbar">
-          <h3>Manage Exams</h3>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{adminEmail}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {adminInitial}
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Faculty Workspace</div>
+            <h1>Manage Exams</h1>
+            <p>Monitor status, review access codes, and delete active exam papers.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{adminEmail}</span>
             </div>
           </div>
         </div>
@@ -1244,7 +1254,7 @@ const ManageExams = () => {
           </Button>
         </Modal.Footer>
       </Modal>
-    </div>
+    </main>
   );
 };
 
@@ -1386,13 +1396,18 @@ const ViewResults = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <SharedAdminSidebar active="results" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div className="dashboard-topbar">
-          <h3>Student Results</h3>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{adminEmail}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {adminInitial}
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Faculty Workspace</div>
+            <h1>Student Results</h1>
+            <p>Export submissions, analyze exam grades, and approve deletion requests.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{adminEmail}</span>
             </div>
           </div>
         </div>
@@ -1604,7 +1619,7 @@ const ViewResults = () => {
           </Button>
         </Modal.Footer>
       </Modal>
-    </div>
+    </main>
   );
 };
 
@@ -1643,37 +1658,42 @@ const AdminSettings = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <SharedAdminSidebar active="settings" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div className="dashboard-topbar">
-          <h3>Settings</h3>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{adminEmail}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {adminInitial}
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Faculty Workspace</div>
+            <h1>Settings</h1>
+            <p>Update your administrator credentials and change your account password.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{adminEmail}</span>
             </div>
           </div>
         </div>
 
         <div className="create-exam-card" style={{ maxWidth: 500 }}>
-          <h5 style={{ color: '#2D0040', fontWeight: 700, marginBottom: 24 }}>Change Password</h5>
+          <h5 style={{ color: 'var(--ep-ink)', fontWeight: 700, marginBottom: 24 }}>Change Password</h5>
           
           {error && <Alert variant="danger" style={{ borderRadius: 10 }}>{error}</Alert>}
           
           <div>
             <label style={{ fontWeight: 600, fontSize: 13, color: '#444', display: 'block', marginBottom: 6 }}>Current Password</label>
-            <input type="password" style={inputStyle} value={oldPassword} onChange={e => setOldPassword(e.target.value)} onFocus={e => e.target.style.borderColor = '#5B0A7B'} onBlur={e => e.target.style.borderColor = '#e0e0e0'} />
+            <input type="password" style={inputStyle} value={oldPassword} onChange={e => setOldPassword(e.target.value)} onFocus={e => e.target.style.borderColor = 'var(--ep-brand)'} onBlur={e => e.target.style.borderColor = '#e0e0e0'} />
             
             <label style={{ fontWeight: 600, fontSize: 13, color: '#444', display: 'block', marginBottom: 6, marginTop: 10 }}>New Password</label>
-            <input type="password" style={inputStyle} value={newPassword} onChange={e => setNewPassword(e.target.value)} onFocus={e => e.target.style.borderColor = '#5B0A7B'} onBlur={e => e.target.style.borderColor = '#e0e0e0'} />
+            <input type="password" style={inputStyle} value={newPassword} onChange={e => setNewPassword(e.target.value)} onFocus={e => e.target.style.borderColor = 'var(--ep-brand)'} onBlur={e => e.target.style.borderColor = '#e0e0e0'} />
           </div>
 
           {saved && <Alert variant="success" style={{ borderRadius: 10, fontWeight: 600, marginTop: 16 }}>✓ Password updated successfully!</Alert>}
           <Button onClick={handleSave} disabled={loading}
-            style={{ marginTop: 20, width: '100%', background: 'linear-gradient(135deg,#2D0040,#5B0A7B)', border: 'none', borderRadius: 10, padding: '12px 32px', fontWeight: 700, fontSize: 15 }}>
+            style={{ marginTop: 20, width: '100%', background: 'linear-gradient(135deg,#0f172a,var(--ep-brand))', border: 'none', borderRadius: 10, padding: '12px 32px', fontWeight: 700, fontSize: 15 }}>
             {loading ? 'Saving...' : 'Update Password'}
           </Button>
         </div>
-      </div>
+      </main>
     </div>
   );
 };
@@ -1880,14 +1900,21 @@ const ManageAdmins = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <SharedAdminSidebar active="manage-admins" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div className="dashboard-topbar">
-          <h3>Manage Admins (Faculty)</h3>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{adminEmail}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {adminInitial}
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Platform Admin Control</div>
+            <h1>Manage Admins (Faculty)</h1>
+            <p>Create and oversee Faculty Administrator accounts across the institution.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{adminEmail}</span>
             </div>
+          </div>
+        </div>
           </div>
         </div>
 
@@ -2157,7 +2184,7 @@ const ManageAdmins = () => {
             </div>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 };
