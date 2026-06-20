@@ -349,7 +349,7 @@ const ResultPage = () => {
               <div className="ep-card">
                 <div className="ep-card-head" style={{ padding: '18px 20px', borderBottom: '1px solid var(--ep-line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                   <div>
-                    <h3 style={{ margin: 0, fontWeight: 700, fontSize: 15 }}>📊 All Exam Results</h3>
+                    <h3 style={{ margin: 0, fontSize: 15 }}>📊 All Exam Results</h3>
                     <p style={{ margin: '2px 0 0', fontSize: 12.5 }}>Historical record of your submitted assessments ({finalAllResults.length})</p>
                   </div>
                   <ExportToolbar
@@ -546,23 +546,23 @@ const ResultPage = () => {
             </span>
           </div>
 
-          {/* Stats Pills Grid */}
-          <div className="ep-grid ep-grid-4" style={{ marginBottom: 24 }}>
-            <div className="ep-stat-card" style={{ padding: 14 }}>
-              <div className="ep-stat-label">Total Qs</div>
-              <div className="ep-stat-value" style={{ fontSize: 18 }}>{total}</div>
+          {/* Stats Pills Grid using beautiful .result-summary */}
+          <div className="result-summary" style={{ marginBottom: 24 }}>
+            <div className="rs-item">
+              <div className="lbl">Total Questions</div>
+              <div className="val">{total}</div>
             </div>
-            <div className="ep-stat-card" style={{ padding: 14 }}>
-              <div className="ep-stat-label" style={{ color: 'var(--ep-success)' }}>Correct</div>
-              <div className="ep-stat-value" style={{ fontSize: 18, color: 'var(--ep-success)' }}>{score}</div>
+            <div className="rs-item">
+              <div className="lbl" style={{ color: 'var(--ep-success)' }}>Correct Answers</div>
+              <div className="val" style={{ color: 'var(--ep-success)' }}>{score}</div>
             </div>
-            <div className="ep-stat-card" style={{ padding: 14 }}>
-              <div className="ep-stat-label" style={{ color: 'var(--ep-warning)' }}>Attempted</div>
-              <div className="ep-stat-value" style={{ fontSize: 18, color: 'var(--ep-warning)' }}>{attempted}</div>
+            <div className="rs-item">
+              <div className="lbl" style={{ color: 'var(--ep-warning)' }}>Attempted</div>
+              <div className="val" style={{ color: 'var(--ep-warning)' }}>{attempted}</div>
             </div>
-            <div className="ep-stat-card" style={{ padding: 14 }}>
-              <div className="ep-stat-label" style={{ color: 'var(--ep-danger)' }}>Skipped</div>
-              <div className="ep-stat-value" style={{ fontSize: 18, color: 'var(--ep-danger)' }}>{unanswered}</div>
+            <div className="rs-item">
+              <div className="lbl" style={{ color: 'var(--ep-danger)' }}>Skipped Qs</div>
+              <div className="val" style={{ color: 'var(--ep-danger)' }}>{unanswered}</div>
             </div>
           </div>
 
