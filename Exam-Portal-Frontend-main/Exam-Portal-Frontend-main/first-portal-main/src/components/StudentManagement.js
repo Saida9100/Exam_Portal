@@ -1,17 +1,13 @@
+/* eslint-disable */
 // src/components/StudentManagement.js
-// ✅ ENHANCED: regular admins can now see the status of their own
-//    deletion requests (pending / approved / rejected).
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiService from '../services/api';
 import SharedAdminSidebar from './SharedAdminSidebar';
 import ExportToolbar from './ExportToolbar';
-import {
-  prepareStudentsForExport, getExportFilename, filterByDateRange,
-} from '../utils/exportUtils';
+import { prepareStudentsForExport, getExportFilename, filterByDateRange } from '../utils/exportUtils';
 
-// (password generator & helpers unchanged — see original file)
+// Password generator
 const generatePassword = (name) => {
   if (!name || name.trim() === '') name = 'student';
   const nameBase = name.trim().split(' ')[0].toLowerCase().replace(/[^a-z]/g, '').substring(0, 4);
@@ -38,30 +34,15 @@ const generatePassword = (name) => {
   return ok ? pw : generatePassword(name + 'a');
 };
 
-const downloadCSV = (rows, filename) => {
-  const header = Object.keys(rows[0]).join(',');
-  const body = rows.map((r) => Object.values(r).map((v) => `"${v}"`).join(',')).join('\n');
-  const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-};
-
 const StatusPill = ({ status }) => {
   const meta = {
-    'Pending Approval': { bg: '#fff3e0', color: '#e65100', icon: '⏳' },
-    'Approved': { bg: '#e8f5e9', color: '#2e7d32', icon: '✅' },
-    'Rejected': { bg: '#ffebee', color: '#c62828', icon: '❌' },
-  }[status] || { bg: '#eee', color: '#555', icon: '•' };
+    'Pending Approval': { className: 'ep-badge-warning', icon: '⏳' },
+    'Approved': { className: 'ep-badge-success', icon: '✅' },
+    'Rejected': { className: 'ep-badge-danger', icon: '❌' },
+  }[status] || { className: '', icon: '•' };
   return (
-    <span style={{
-      background: meta.bg, color: meta.color,
-      padding: '3px 9px', borderRadius: 999,
-      fontSize: 11, fontWeight: 700,
-      display: 'inline-flex', alignItems: 'center', gap: 4,
-    }}>
-      <span>{meta.icon}</span><span>{status}</span>
+    <span className={`ep-badge ${meta.className}`}>
+      <span>{meta.icon}</span>&nbsp;{status}
     </span>
   );
 };
@@ -92,7 +73,6 @@ const StudentManagement = () => {
   const [selectedFilterAdminId, setSelectedFilterAdminId] = useState('');
   const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
 
-  // ✅ NEW: my own deletion requests
   const [myRequests, setMyRequests] = useState([]);
   const [requestStatusFilter, setRequestStatusFilter] = useState('');
 
@@ -122,7 +102,6 @@ const StudentManagement = () => {
     }
   }, [admin?.role]);
 
-  // ✅ REWRITTEN: admin (non-super) submits request, super admin deletes directly
   const handleDelete = async (id, name, email) => {
     if (admin?.role === 'super_admin') {
       if (!window.confirm(`Delete student "${name}"? This cannot be undone.`)) return;
@@ -137,7 +116,7 @@ const StudentManagement = () => {
         `Request deletion of student "${name}"?\n\nThe Super Admin must approve this.\n\nOptional reason:`,
         ''
       );
-      if (reason === null) return; // cancelled
+      if (reason === null) return;
       setError('');
       try {
         await apiService.submitDeletionRequest({
@@ -280,195 +259,124 @@ const StudentManagement = () => {
   );
   const finalFilteredStudents = filterByDateRange(searchFilteredStudents, exportFilters.startDate, exportFilters.endDate, 'created_at');
 
-  const tabStyle = (t) => ({
-    padding: '10px 24px', borderRadius: 8, fontWeight: 600, fontSize: 14,
-    border: 'none', cursor: 'pointer', transition: 'all 0.2s',
-    background: tab === t ? 'linear-gradient(135deg,#5B0A7B,#2D0040)' : '#f0f0f5',
-    color: tab === t ? '#fff' : '#555',
-    boxShadow: tab === t ? '0 4px 14px rgba(91,10,123,0.3)' : 'none',
-  });
-
-  const inputStyle = {
-    width: '100%', padding: '12px 14px', fontSize: 14, borderRadius: 10,
-    border: '2px solid #e0e0e0', outline: 'none', boxSizing: 'border-box',
-  };
-
-  // Filter my requests by status
   const filteredRequests = requestStatusFilter
     ? myRequests.filter((r) => r.status === requestStatusFilter)
     : myRequests;
 
   const pendingCount = myRequests.filter((r) => r.status === 'Pending Approval').length;
+  const adminInitial = admin?.name?.charAt(0)?.toUpperCase() || 'A';
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f7fb' }}>
-      <SharedAdminSidebar onLogout={() => apiService.logout()} admin={admin} />
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <SharedAdminSidebar active="students" onLogout={() => apiService.logout()} />
 
-      <div style={{ marginLeft: 260, padding: '24px 28px' }}>
+      <main className="dashboard-main ep-page" style={{ flex: 1, minWidth: 0 }}>
         {/* Header */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          marginBottom: 22,
-        }}>
+        <div className="ep-page-header">
           <div>
-            <h1 style={{ margin: 0, color: '#2c2c54', fontSize: 24, fontWeight: 800 }}>
-              👥 Student Accounts
-            </h1>
-            <div style={{ color: '#7a7a93', fontSize: 13, marginTop: 2 }}>
+            <div className="ep-kicker">Manage Candidates</div>
+            <h1>Student Accounts</h1>
+            <p>
               {students.length} active student(s)
               {pendingCount > 0 && (
-                <span style={{
-                  marginLeft: 10, background: '#fff3e0', color: '#e65100',
-                  padding: '3px 10px', borderRadius: 999,
-                  fontSize: 12, fontWeight: 700,
-                }}>
-                  ⏳ {pendingCount} deletion request{pendingCount > 1 ? 's' : ''} pending
+                <span className="ep-badge ep-badge-warning" style={{ marginLeft: 10 }}>
+                  ⏳ {pendingCount} Pending Deletion Request{pendingCount > 1 ? 's' : ''}
                 </span>
               )}
-            </div>
+            </p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 13, color: '#555' }}>{admin?.email}</span>
-            <div style={{
-              width: 40, height: 40, borderRadius: '50%',
-              background: 'linear-gradient(135deg, #5B0A7B, #7B1FA2)',
-              color: '#fff', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', fontWeight: 700,
-            }}>{admin?.name?.charAt(0)?.toUpperCase() || 'A'}</div>
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{admin?.email}</span>
+            </div>
           </div>
         </div>
 
         {success && (
-          <div style={{
-            background: '#e8f5e9', color: '#2e7d32', padding: '12px 16px',
-            borderRadius: 10, marginBottom: 16, display: 'flex',
-            justifyContent: 'space-between', alignItems: 'center',
-            whiteSpace: 'pre-line', fontSize: 14,
-          }}>
-            <span>{success}</span>
-            <button onClick={() => setSuccess('')}
-              style={{ background: 'none', border: 'none', color: '#2e7d32',
-                       fontSize: 20, cursor: 'pointer' }}>×</button>
+          <div className="ep-alert" style={{ background: 'var(--ep-success-soft)', color: 'var(--ep-success)', border: '1px solid #bbf7d0', padding: 14, borderRadius: 10, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13.5, whiteSpace: 'pre-line' }}>{success}</span>
+            <button onClick={() => setSuccess('')} style={{ background: 'none', border: 'none', color: 'var(--ep-success)', fontSize: 18, fontWeight: 'bold' }}>×</button>
           </div>
         )}
         {error && (
-          <div style={{
-            background: '#ffebee', color: '#c62828', padding: '12px 16px',
-            borderRadius: 10, marginBottom: 16, display: 'flex',
-            justifyContent: 'space-between', alignItems: 'center', fontSize: 14,
-          }}>
-            <span>{error}</span>
-            <button onClick={() => setError('')}
-              style={{ background: 'none', border: 'none', color: '#c62828',
-                       fontSize: 20, cursor: 'pointer' }}>×</button>
+          <div className="ep-alert" style={{ background: 'var(--ep-danger-soft)', color: 'var(--ep-danger)', border: '1px solid #fecaca', padding: 14, borderRadius: 10, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13.5 }}>{error}</span>
+            <button onClick={() => setError('')} style={{ background: 'none', border: 'none', color: 'var(--ep-danger)', fontSize: 18, fontWeight: 'bold' }}>×</button>
           </div>
         )}
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 22, flexWrap: 'wrap' }}>
-          <button style={tabStyle('list')} onClick={() => setTab('list')}>👥 Student List</button>
-          <button style={tabStyle('manual')} onClick={() => setTab('manual')}>➕ Add Single</button>
-          <button style={tabStyle('bulk')} onClick={() => setTab('bulk')}>📋 Bulk Create</button>
-          <button
-            style={tabStyle('requests')}
-            onClick={() => setTab('requests')}
-          >
-            🔔 My Requests
-            {pendingCount > 0 && (
-              <span style={{
-                marginLeft: 8, background: '#e65100', color: '#fff',
-                padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-              }}>{pendingCount}</span>
-            )}
-          </button>
+        {/* Toolbar Tabs */}
+        <div className="toolbar" style={{ marginBottom: 18 }}>
+          <div className="pill-tabs">
+            <button className={tab === 'list' ? 'active' : ''} onClick={() => setTab('list')}>👥 Student List</button>
+            <button className={tab === 'manual' ? 'active' : ''} onClick={() => setTab('manual')}>➕ Add Single</button>
+            <button className={tab === 'bulk' ? 'active' : ''} onClick={() => setTab('bulk')}>📋 Bulk Create</button>
+            <button className={tab === 'requests' ? 'active' : ''} onClick={() => setTab('requests')}>
+              🔔 My Requests
+              {pendingCount > 0 && (
+                <span className="badge ms-2" style={{ background: 'var(--ep-danger)', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 12 }}>{pendingCount}</span>
+              )}
+            </button>
+          </div>
           {admin?.role === 'super_admin' && (
-            <button onClick={handleClearData}
-              style={{
-                padding: '10px 24px', borderRadius: 8,
-                background: '#fff', border: '2px solid #ffcdd2',
-                color: '#c62828', fontWeight: 600, fontSize: 14, cursor: 'pointer',
-                marginLeft: 'auto',
-              }}
-            >🗑️ Clear Data</button>
+            <button onClick={handleClearData} className="ep-btn ep-btn-outline" style={{ color: 'var(--ep-danger)', borderColor: 'var(--ep-danger-soft)' }}>
+              🗑️ Clear All Students
+            </button>
           )}
         </div>
 
-        {/* ═══ TAB: REQUESTS (NEW) ═══ */}
+        {/* ═══ TAB: REQUESTS ═══ */}
         {tab === 'requests' && (
-          <div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
-              <span style={{ fontSize: 13, color: '#555', fontWeight: 600 }}>Filter:</span>
+          <div className="ep-card" style={{ padding: 24 }}>
+            <div className="d-flex gap-2 mb-3 align-items-center flex-wrap" style={{ borderBottom: '1px solid var(--ep-line)', paddingBottom: 16 }}>
+              <span style={{ fontSize: 13, color: 'var(--ep-muted)', fontWeight: 600 }}>Filter Requests:</span>
               {['', 'Pending Approval', 'Approved', 'Rejected'].map((s) => (
                 <button
                   key={s || 'all'}
                   onClick={() => setRequestStatusFilter(s)}
-                  style={{
-                    padding: '6px 14px', borderRadius: 8,
-                    background: requestStatusFilter === s ? '#5B0A7B' : '#fff',
-                    color: requestStatusFilter === s ? '#fff' : '#555',
-                    border: '1.5px solid ' + (requestStatusFilter === s ? '#5B0A7B' : '#e0e0e0'),
-                    fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                  }}
+                  className={`ep-btn ${requestStatusFilter === s ? 'ep-btn-primary' : 'ep-btn-outline'}`}
+                  style={{ padding: '6px 14px', fontSize: 12.5 }}
                 >{s || 'All'}</button>
               ))}
-              <button onClick={fetchMyRequests}
-                style={{
-                  marginLeft: 'auto', padding: '6px 14px', borderRadius: 8,
-                  background: '#fff', border: '1.5px solid #e0e0e0',
-                  color: '#555', fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                }}
-              >🔄 Refresh</button>
+              <button onClick={fetchMyRequests} className="ep-btn ep-btn-outline" style={{ padding: '6px 14px', fontSize: 12.5, marginLeft: 'auto' }}>
+                🔄 Refresh
+              </button>
             </div>
 
             {filteredRequests.length === 0 ? (
-              <div style={{
-                padding: 50, textAlign: 'center',
-                background: '#fff', borderRadius: 14,
-                border: '1px solid #ece9f4',
-              }}>
-                <div style={{ fontSize: 36, marginBottom: 8 }}>📭</div>
-                <div style={{ color: '#888', fontSize: 15 }}>
-                  No deletion requests yet.
-                </div>
-                <div style={{ color: '#aaa', fontSize: 12, marginTop: 6 }}>
-                  When you click 🗑 on a student, a request will appear here.
-                </div>
+              <div className="ep-empty">
+                <div style={{ fontSize: 48, marginBottom: 8 }}>📭</div>
+                <h4>No requests found</h4>
+                <p>When you request deletion of students, they will list here for Super Admin audit.</p>
               </div>
             ) : (
-              <div style={{ display: 'grid', gap: 12 }}>
+              <div className="ep-grid ep-grid-2">
                 {filteredRequests.map((req) => (
-                  <div key={req.id} style={{
-                    background: '#fff', borderRadius: 12,
-                    padding: 18, border: '1px solid #ece9f4',
-                    boxShadow: '0 2px 8px rgba(91,10,123,0.04)',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div className="ep-card" key={req.id} style={{ padding: 18, background: 'var(--ep-surface-2)' }}>
+                    <div className="d-flex align-items-center justify-content-between">
                       <StatusPill status={req.status} />
-                      <span style={{ fontSize: 12, color: '#888' }}>
-                        Request #{req.id} • {req.type}
-                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--ep-muted)' }}>ID: #{req.id} • Student Deletion</span>
                     </div>
-                    <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700, color: '#2c2c54' }}>
-                      {req.display_name || `Target #${req.target_id}`}
+                    <div style={{ marginTop: 10, fontSize: 15, fontWeight: 700, color: 'var(--ep-ink)' }}>
+                      {req.display_name || `Target ID: ${req.target_id}`}
                     </div>
                     {req.display_subtitle && (
-                      <div style={{ fontSize: 13, color: '#666' }}>{req.display_subtitle}</div>
+                      <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 2 }}>{req.display_subtitle}</div>
                     )}
                     {req.reason && (
                       <div style={{
-                        marginTop: 8, padding: '8px 12px',
-                        background: '#fafafa', borderRadius: 8,
-                        fontSize: 13, color: '#555',
-                        borderLeft: '3px solid #7B1FA2',
+                        marginTop: 10, padding: '10px 12px',
+                        background: '#fff', borderRadius: 8,
+                        fontSize: 12.5, color: 'var(--ep-ink-2)',
+                        borderLeft: '3px solid var(--ep-brand)',
                       }}>
                         <strong>Reason:</strong> {req.reason}
                       </div>
                     )}
-                    <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
-                      Submitted {new Date(req.created_at).toLocaleString('en-IN', {
-                        day: '2-digit', month: 'short', year: 'numeric',
-                        hour: '2-digit', minute: '2-digit',
-                      })}
+                    <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--ep-muted)' }}>
+                      Submitted: {new Date(req.created_at).toLocaleString('en-IN')}
                     </div>
                   </div>
                 ))}
@@ -480,245 +388,244 @@ const StudentManagement = () => {
         {/* ═══ TAB: LIST ═══ */}
         {tab === 'list' && (
           <>
-            {admin?.role === 'super_admin' && (
-              <div style={{ marginBottom: 12 }}>
-                <select
-                  value={selectedFilterAdminId}
-                  onChange={(e) => setSelectedFilterAdminId(e.target.value)}
-                  style={{ ...inputStyle, color: '#5B0A7B', fontWeight: 600 }}
-                >
-                  <option value="">All Faculty / Admins</option>
-                  {adminsList.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name || a.email} ({a.email})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div style={{ marginBottom: 12 }}>
-              <input
-                type="text" placeholder="🔍 Search students..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={inputStyle}
-              />
-            </div>
-            <ExportToolbar
-              data={finalFilteredStudents}
-              prepareDataFn={prepareStudentsForExport}
-              filenameFn={(d) => getExportFilename('students', d)}
-              filters={exportFilters}
-              onFiltersChange={setExportFilters}
-            />
-
-            {loading ? (
-              <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>
-                Loading students…
-              </div>
-            ) : finalFilteredStudents.length === 0 ? (
-              <div style={{
-                padding: 50, textAlign: 'center',
-                background: '#fff', borderRadius: 14,
-                border: '1px solid #ece9f4',
-              }}>
-                <div style={{ fontSize: 36, marginBottom: 8 }}>👤</div>
-                <div style={{ color: '#888', fontSize: 15 }}>
-                  No students found.
+            <div className="ep-grid ep-grid-2 mb-3">
+              {admin?.role === 'super_admin' && (
+                <div className="ep-field" style={{ marginBottom: 0 }}>
+                  <select
+                    value={selectedFilterAdminId}
+                    onChange={(e) => setSelectedFilterAdminId(e.target.value)}
+                    className="ep-input"
+                    style={{ fontWeight: 600, color: 'var(--ep-brand)' }}
+                  >
+                    <option value="">All Faculty / Admins</option>
+                    {adminsList.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name || a.email} ({a.email})
+                      </option>
+                    ))}
+                  </select>
                 </div>
+              )}
+              <div className="ep-field" style={{ marginBottom: 0 }}>
+                <input
+                  type="text" placeholder="🔍 Search students by name or email..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="ep-input"
+                />
               </div>
-            ) : (
-              <div style={{ background: '#fff', borderRadius: 12, overflow: 'hidden', border: '1px solid #ece9f4' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-                  <thead>
-                    <tr style={{ background: '#faf8ff' }}>
-                      {['#', 'Name', 'Email', 'Assigned Admin', 'Joined', 'Action'].map((h) => (
-                        <th key={h} style={{
-                          padding: '14px 16px', textAlign: 'left',
-                          color: '#5B0A7B', fontSize: 12, fontWeight: 700,
-                          letterSpacing: 0.5, borderBottom: '2px solid #ece9f4',
-                        }}>{h.toUpperCase()}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {finalFilteredStudents.map((s, i) => {
-                      const pendingReq = myRequests.find(
-                        (r) => String(r.target_id) === String(s.id) && r.type === 'student' && r.status === 'Pending Approval'
-                      );
-                      const rejectedReq = myRequests.find(
-                        (r) => String(r.target_id) === String(s.id) && r.type === 'student' && r.status === 'Rejected'
-                      );
+            </div>
 
-                      return (
-                        <tr
-                          key={s.id}
-                          style={{ borderBottom: '1px solid #f5f5f5', transition: 'background 0.15s' }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#fdfcff'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <td style={{ padding: '14px 16px', color: '#888' }}>{i + 1}</td>
-                          <td style={{ padding: '14px 16px', fontWeight: 600 }}>{s.name}</td>
-                          <td style={{ padding: '14px 16px', color: '#555' }}>{s.email}</td>
-                          <td style={{ padding: '14px 16px', color: '#666' }}>
-                            {(() => {
-                              const found = adminsList.find((a) => String(a.id) === String(s.admin_id));
-                              return found ? `${found.name || found.email} (${found.id})` : (s.admin_id ? `Admin #${s.admin_id}` : '—');
-                            })()}
-                          </td>
-                          <td style={{ padding: '14px 16px', color: '#888' }}>
-                            {new Date(s.created_at).toLocaleDateString('en-IN', {
-                              day: 'numeric', month: 'short', year: 'numeric',
-                            })}
-                          </td>
-                          <td style={{ padding: '14px 16px' }}>
-                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                              <button
-                                onClick={() => setResetModal({ isOpen: true, id: s.id, name: s.name, newPassword: '' })}
-                                style={{
-                                  padding: '7px 12px', background: '#fff',
-                                  border: '2px solid #e0e0e0', borderRadius: 8,
-                                  color: '#555', fontWeight: 600, fontSize: 12, cursor: 'pointer',
-                                }}
-                              >🔑 Reset Pass</button>
-
-                              {pendingReq ? (
-                                <span style={{
-                                  padding: '7px 12px', background: '#fff3e0',
-                                  color: '#e65100', border: '1.5px solid #ffe0b2',
-                                  borderRadius: 8, fontWeight: 700, fontSize: 12,
-                                }}>
-                                  ⏳ Pending Approval
-                                </span>
-                              ) : rejectedReq ? (
-                                <button
-                                  onClick={() => handleDelete(s.id, s.name, s.email)}
-                                  style={{
-                                    padding: '7px 12px', background: '#fff',
-                                    border: '2px solid #ffcdd2', borderRadius: 8,
-                                    color: '#c62828', fontWeight: 600, fontSize: 12, cursor: 'pointer',
-                                  }}
-                                >🗑 Retry Delete</button>
-                              ) : (
-                                <button
-                                  onClick={() => handleDelete(s.id, s.name, s.email)}
-                                  style={{
-                                    padding: '7px 12px', background: '#fff',
-                                    border: '2px solid #ffcdd2', borderRadius: 8,
-                                    color: '#c62828', fontWeight: 600, fontSize: 12, cursor: 'pointer',
-                                  }}
-                                  onMouseEnter={(e) => { e.currentTarget.style.background = '#ffebee'; }}
-                                  onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
-                                >🗑 Delete</button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            <div className="ep-card">
+              <div className="ep-card-head" style={{ borderBottom: '1px solid var(--ep-line)', padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Student Directory</h3>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ep-muted)' }}>Registered students eligible for exam access</p>
+                </div>
+                <ExportToolbar
+                  data={finalFilteredStudents}
+                  prepareDataFn={prepareStudentsForExport}
+                  filenameFn={(d) => getExportFilename('students', d)}
+                  filters={exportFilters}
+                  onFiltersChange={setExportFilters}
+                />
               </div>
-            )}
+
+              {loading ? (
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--ep-muted)' }}>
+                  <div className="spinner-border spinner-border-sm text-primary me-2" />
+                  Loading students Directory...
+                </div>
+              ) : finalFilteredStudents.length === 0 ? (
+                <div className="ep-empty">
+                  <div style={{ fontSize: 48, marginBottom: 8 }}>👥</div>
+                  <h4>No students found</h4>
+                  <p>Try clearing filters or add a student to begin.</p>
+                </div>
+              ) : (
+                <div className="table-wrap">
+                  <table className="ep-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Assigned Admin</th>
+                        <th>Joined Date</th>
+                        <th style={{ textAlign: 'center' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {finalFilteredStudents.map((s, i) => {
+                        const pendingReq = myRequests.find(
+                          (r) => String(r.target_id) === String(s.id) && r.type === 'student' && r.status === 'Pending Approval'
+                        );
+                        const rejectedReq = myRequests.find(
+                          (r) => String(r.target_id) === String(s.id) && r.type === 'student' && r.status === 'Rejected'
+                        );
+
+                        return (
+                          <tr key={s.id} className="row-hover">
+                            <td>{i + 1}</td>
+                            <td className="cell-strong">{s.name}</td>
+                            <td>{s.email}</td>
+                            <td>
+                              {(() => {
+                                const found = adminsList.find((a) => String(a.id) === String(s.admin_id));
+                                return found ? `${found.name || found.email}` : (s.admin_id ? `Admin #${s.admin_id}` : '—');
+                              })()}
+                            </td>
+                            <td>
+                              {new Date(s.created_at).toLocaleDateString('en-IN', {
+                                day: 'numeric', month: 'short', year: 'numeric',
+                              })}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                <button
+                                  onClick={() => setResetModal({ isOpen: true, id: s.id, name: s.name, newPassword: '' })}
+                                  className="ep-btn ep-btn-outline"
+                                  style={{ padding: '4px 10px', fontSize: 11.5 }}
+                                >
+                                  🔑 Reset Pass
+                                </button>
+
+                                {pendingReq ? (
+                                  <span className="ep-badge ep-badge-warning" style={{ fontSize: 11.5 }}>
+                                    ⏳ Pending Approval
+                                  </span>
+                                ) : rejectedReq ? (
+                                  <button
+                                    onClick={() => handleDelete(s.id, s.name, s.email)}
+                                    className="ep-btn ep-btn-outline"
+                                    style={{ padding: '4px 10px', fontSize: 11.5, color: 'var(--ep-danger)', borderColor: 'var(--ep-danger-soft)' }}
+                                  >
+                                    🗑 Retry Delete
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleDelete(s.id, s.name, s.email)}
+                                    className="ep-btn ep-btn-outline"
+                                    style={{ padding: '4px 10px', fontSize: 11.5, color: 'var(--ep-danger)' }}
+                                  >
+                                    🗑 Delete
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </>
         )}
 
         {/* ═══ TAB: MANUAL ═══ */}
         {tab === 'manual' && (
-          <form onSubmit={handleSingleCreate}
-            style={{ background: '#fff', padding: 28, borderRadius: 14, border: '1px solid #ece9f4' }}>
-            <h3 style={{ marginTop: 0, color: '#2c2c54', fontSize: 18 }}>➕ Create Single Student</h3>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 13, color: '#555', fontWeight: 600 }}>Full Name</label>
-              <input type="text" required
-                value={form.name}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setForm({ ...form, name: v });
-                  if (autoPass) setForm((f) => ({ ...f, password: generatePassword(v) }));
-                }}
-                style={{ ...inputStyle, marginTop: 6 }}
-              />
+          <div className="ep-card" style={{ maxWidth: 600, margin: '0 auto', padding: 24 }}>
+            <div className="ep-card-head" style={{ borderBottom: '1px solid var(--ep-line)', paddingBottom: 12, marginBottom: 20 }}>
+              <h3 style={{ margin: 0, fontSize: 16 }}>➕ Create Single Student Account</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ep-muted)' }}>Add individual student candidates instantly.</p>
             </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 13, color: '#555', fontWeight: 600 }}>Email</label>
-              <input type="email" required
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                style={{ ...inputStyle, marginTop: 6 }}
-              />
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 13, color: '#555', fontWeight: 600 }}>
-                Password{' '}
-                <span onClick={() => { setAutoPass(!autoPass); if (!autoPass) setForm({ ...form, password: generatePassword(form.name) }); }}
-                  style={{ color: '#7B1FA2', cursor: 'pointer', fontWeight: 700 }}>
-                  {autoPass ? '🔄 Auto-generate' : '✏️ Manual'}
-                </span>
-              </label>
-              <input type="text" required
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                readOnly={autoPass}
-                style={{ ...inputStyle, marginTop: 6, background: autoPass ? '#f5f5f5' : '#fff' }}
-              />
-            </div>
-            {admin?.role === 'super_admin' && (
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 13, color: '#555', fontWeight: 600 }}>Assign to Admin</label>
-                <select required
-                  value={selectedAdminId}
-                  onChange={(e) => setSelectedAdminId(e.target.value)}
-                  style={{ ...inputStyle, marginTop: 6 }}
-                >
-                  <option value="">Select admin…</option>
-                  {adminsList.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
-                  ))}
-                </select>
+            <form onSubmit={handleSingleCreate}>
+              <div className="ep-field">
+                <label>Full Name</label>
+                <input type="text" required
+                  value={form.name}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setForm({ ...form, name: v });
+                    if (autoPass) setForm((f) => ({ ...f, password: generatePassword(v) }));
+                  }}
+                  className="ep-input"
+                  placeholder="e.g. John Doe"
+                />
               </div>
-            )}
-            <button type="submit" disabled={actionLoading}
-              style={{
-                padding: '12px 28px', borderRadius: 10,
-                background: 'linear-gradient(135deg, #5B0A7B, #7B1FA2)',
-                color: '#fff', border: 'none',
-                fontWeight: 700, fontSize: 15, cursor: 'pointer',
-                opacity: actionLoading ? 0.6 : 1,
-              }}
-            >
-              {actionLoading ? 'Creating…' : '➕ Create Student'}
-            </button>
-          </form>
+              <div className="ep-field">
+                <label>Email Address</label>
+                <input type="email" required
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  className="ep-input"
+                  placeholder="e.g. john@university.edu"
+                />
+              </div>
+              <div className="ep-field">
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Password</span>
+                  <span onClick={() => { setAutoPass(!autoPass); if (!autoPass) setForm({ ...form, password: generatePassword(form.name) }); }}
+                    style={{ color: 'var(--ep-brand)', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
+                    {autoPass ? '🔄 Switch to Manual' : '✏️ Switch to Auto'}
+                  </span>
+                </label>
+                <input type="text" required
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  readOnly={autoPass}
+                  className="ep-input"
+                  style={{ background: autoPass ? 'var(--ep-surface-2)' : '#fff' }}
+                />
+              </div>
+              {admin?.role === 'super_admin' && (
+                <div className="ep-field">
+                  <label>Assign to Faculty Admin</label>
+                  <select required
+                    value={selectedAdminId}
+                    onChange={(e) => setSelectedAdminId(e.target.value)}
+                    className="ep-input"
+                  >
+                    <option value="">Select admin…</option>
+                    {adminsList.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <button type="submit" disabled={actionLoading} className="ep-btn ep-btn-primary ep-btn-block" style={{ marginTop: 10 }}>
+                {actionLoading ? 'Creating Candidate…' : '➕ Create Student Account'}
+              </button>
+            </form>
+          </div>
         )}
 
         {/* ═══ TAB: BULK ═══ */}
         {tab === 'bulk' && (
-          <div style={{ background: '#fff', padding: 28, borderRadius: 14, border: '1px solid #ece9f4' }}>
-            <h3 style={{ marginTop: 0, color: '#2c2c54', fontSize: 18 }}>📋 Bulk Create Students</h3>
-            <p style={{ color: '#666', fontSize: 13 }}>
-              Format: <code>Name, Email, Password</code> (one per line). Password is optional — auto-generated if missing.
-            </p>
-            <input type="file" accept=".csv,.txt" onChange={handleCSVUpload}
-              style={{ marginBottom: 12, padding: 8, border: '2px dashed #e0e0e0', borderRadius: 10, width: '100%' }}
-            />
-            <textarea
-              placeholder={`John Doe, john@example.com, Pass@123\nJane Smith, jane@example.com`}
-              value={bulkText}
-              onChange={(e) => { setBulkText(e.target.value); parseBulkText(e.target.value); }}
-              rows={8}
-              style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 13 }}
-            />
+          <div className="ep-card" style={{ maxWidth: 700, margin: '0 auto', padding: 24 }}>
+            <div className="ep-card-head" style={{ borderBottom: '1px solid var(--ep-line)', paddingBottom: 12, marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16 }}>📋 Bulk Create Student Accounts</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ep-muted)' }}>Paste raw CSV/list or upload a text file directly.</p>
+            </div>
+            <div className="ep-alert tips" style={{ background: 'var(--ep-info-soft)', color: '#0369a1', border: '1px solid #bae6fd', padding: 12, borderRadius: 10, fontSize: 12.5, marginBottom: 16 }}>
+              Format structure: <code>Name, Email, Password</code> (one candidate per line). Password is optional and will auto-generate if omitted.
+            </div>
+            <div className="ep-field">
+              <label>Upload File (.csv, .txt)</label>
+              <input type="file" accept=".csv,.txt" onChange={handleCSVUpload} className="ep-input" style={{ padding: '8px 12px' }} />
+            </div>
+            <div className="ep-field">
+              <label>Or Paste Student List</label>
+              <textarea
+                placeholder={`John Doe, john@example.com, Pass@123\nJane Smith, jane@example.com`}
+                value={bulkText}
+                onChange={(e) => { setBulkText(e.target.value); parseBulkText(e.target.value); }}
+                rows={6}
+                className="ep-input"
+                style={{ fontFamily: 'monospace', fontSize: 12.5 }}
+              />
+            </div>
             {bulkPreview.length > 0 && (
-              <div style={{ marginTop: 12, background: '#fafafa', padding: 12, borderRadius: 8, fontSize: 13 }}>
-                <strong>Preview:</strong> {bulkPreview.filter((s) => s._valid).length} valid / {bulkPreview.length} total
+              <div style={{ margin: '12px 0', padding: 10, background: 'var(--ep-brand-soft)', borderRadius: 8, fontSize: 13, color: 'var(--ep-brand)', fontWeight: 600 }}>
+                📊 Parsing Check: {bulkPreview.filter((s) => s._valid).length} valid entries ready out of {bulkPreview.length} lines total.
               </div>
             )}
             {admin?.role === 'super_admin' && (
-              <div style={{ marginTop: 14 }}>
-                <label style={{ fontSize: 13, color: '#555', fontWeight: 600 }}>Assign to Admin</label>
-                <select value={selectedAdminId} onChange={(e) => setSelectedAdminId(e.target.value)}
-                  style={{ ...inputStyle, marginTop: 6 }}>
+              <div className="ep-field">
+                <label>Assign to Faculty Admin</label>
+                <select value={selectedAdminId} onChange={(e) => setSelectedAdminId(e.target.value)} className="ep-input">
                   <option value="">Select admin…</option>
                   {adminsList.map((a) => (
                     <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
@@ -726,27 +633,82 @@ const StudentManagement = () => {
                 </select>
               </div>
             )}
-            <button onClick={handleBulkCreate} disabled={actionLoading}
-              style={{
-                marginTop: 16, padding: '12px 28px', borderRadius: 10,
-                background: 'linear-gradient(135deg, #5B0A7B, #7B1FA2)',
-                color: '#fff', border: 'none',
-                fontWeight: 700, fontSize: 15, cursor: 'pointer',
-                opacity: actionLoading ? 0.6 : 1,
-              }}
-            >
-              {actionLoading ? 'Creating…' : '🚀 Create All'}
+            <button onClick={handleBulkCreate} disabled={actionLoading} className="ep-btn ep-btn-primary ep-btn-block" style={{ marginTop: 12 }}>
+              {actionLoading ? 'Executing bulk import…' : '🚀 Import Student Accounts'}
             </button>
             {bulkResult && (
-              <div style={{ marginTop: 14, padding: 12, background: '#f5f5f5', borderRadius: 8, fontSize: 13 }}>
-                <div>Created: <strong>{bulkResult.summary?.created || 0}</strong></div>
-                {bulkResult.skipped?.length > 0 && <div>Skipped: {bulkResult.skipped.length}</div>}
-                {bulkResult.errors?.length > 0 && <div>Errors: {bulkResult.errors.length}</div>}
+              <div style={{ marginTop: 14, padding: 12, background: 'var(--ep-surface-2)', borderRadius: 8, fontSize: 13, border: '1px solid var(--ep-line)' }}>
+                <div>✅ Successful Creations: <strong>{bulkResult.summary?.created || 0}</strong></div>
+                {bulkResult.skipped?.length > 0 && <div>⚠️ Skipped lines: {bulkResult.skipped.length}</div>}
+                {bulkResult.errors?.length > 0 && <div style={{ color: 'var(--ep-danger)' }}>❌ Errors: {bulkResult.errors.length}</div>}
               </div>
             )}
           </div>
         )}
-      </div>
+      </main>
+
+      {/* Password Reset Modal */}
+      {resetModal.isOpen && (
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(15,23,42,0.55)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000, padding: 20,
+        }}>
+          <div className="ep-card" style={{
+            background: '#fff', borderRadius: 16, padding: 24,
+            width: '100%', maxWidth: 390, boxShadow: 'var(--ep-shadow-lg)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+              <div>
+                <h3 style={{ margin: 0, color: 'var(--ep-ink)', fontSize: 18, fontWeight: 800 }}>🔑 Reset Password</h3>
+                <div style={{ color: 'var(--ep-muted)', fontSize: 13, marginTop: 3 }}>Change password for student: <strong>{resetModal.name}</strong></div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResetModal({ isOpen: false, id: null, name: '', newPassword: '' })}
+                style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--ep-muted)', lineHeight: 1 }}
+              >×</button>
+            </div>
+
+            <form onSubmit={handleResetPassword}>
+              <div className="ep-field">
+                <label>New Password</label>
+                <input
+                  type="text"
+                  required
+                  value={resetModal.newPassword}
+                  onChange={(e) => setResetModal({ ...resetModal, newPassword: e.target.value })}
+                  placeholder="Enter secure new password"
+                  className="ep-input"
+                  disabled={actionLoading}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+                <button
+                  type="button"
+                  className="ep-btn ep-btn-outline"
+                  onClick={() => setResetModal({ isOpen: false, id: null, name: '', newPassword: '' })}
+                  style={{ flex: 1 }}
+                  disabled={actionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="ep-btn ep-btn-primary"
+                  style={{ flex: 1 }}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Updating...' : 'Save Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
