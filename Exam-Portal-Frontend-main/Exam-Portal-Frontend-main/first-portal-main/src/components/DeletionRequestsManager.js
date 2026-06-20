@@ -1,6 +1,6 @@
 /* eslint-disable */
 // src/components/DeletionRequestsManager.js
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom'; 
 import { Modal, Button } from 'react-bootstrap';
 import apiService from '../services/api';
@@ -46,7 +46,7 @@ const DeletionRequestsManager = () => {
   const [confirmModal, setConfirmModal] = useState(null); // { id, action, name, type }
   const [actionLoading, setActionLoading] = useState(false);
 
-  const fetchRequests = useCallback(async () => {
+  const fetchRequests = async () => {
     try {
       setLoading(true);
       setError('');
@@ -59,13 +59,13 @@ const DeletionRequestsManager = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
     fetchRequests();
     const t = setInterval(fetchRequests, 30000);
     return () => clearInterval(t);
-  }, [fetchRequests]);
+  }, []);
 
   const handleAction = async (id, action, type) => {
     setActionLoading(true);
@@ -98,8 +98,16 @@ const DeletionRequestsManager = () => {
   const name = superAdmin?.name || 'Super Admin';
   const initial = superAdmin?.name ? superAdmin.name.charAt(0).toUpperCase() : 'S';
 
+  const tabBtnStyle = (t) => ({
+    padding: '10px 24px', borderRadius: '8px', fontWeight: '700', fontSize: '13.5px',
+    border: 'none', cursor: 'pointer', transition: 'all 0.15s',
+    background: tab === t ? '#fff' : 'transparent',
+    color: tab === t ? '#4f46e5' : '#64748b',
+    boxShadow: tab === t ? '0 4px 12px rgba(79, 70, 229, 0.08)' : 'none',
+  });
+
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc' }}>
       <SharedAdminSidebar onLogout={() => apiService.logout()} admin={superAdmin} />
 
       <main className="dashboard-main ep-page" style={{ flex: 1, minWidth: 0 }}>
@@ -142,17 +150,17 @@ const DeletionRequestsManager = () => {
 
         {/* Tabs and Actions */}
         <div className="toolbar" style={{ marginBottom: 18 }}>
-          <div className="pill-tabs" style={{ flexWrap: 'wrap' }}>
-            <button className={tab === 'pending' ? 'active' : ''} onClick={() => setTab('pending')}>
+          <div className="pill-tabs" style={{ background: '#e2e8f0', padding: 4, borderRadius: 10, display: 'inline-flex', gap: 4 }}>
+            <button style={tabBtnStyle('pending')} onClick={() => setTab('pending')}>
               ⏳ Pending ({requests.filter((r) => r.status === 'Pending Approval').length})
             </button>
-            <button className={tab === 'approved' ? 'active' : ''} onClick={() => setTab('approved')}>
+            <button style={tabBtnStyle('approved')} onClick={() => setTab('approved')}>
               ✅ Approved ({requests.filter((r) => r.status === 'Approved').length})
             </button>
-            <button className={tab === 'rejected' ? 'active' : ''} onClick={() => setTab('rejected')}>
+            <button style={tabBtnStyle('rejected')} onClick={() => setTab('rejected')}>
               ❌ Rejected ({requests.filter((r) => r.status === 'Rejected').length})
             </button>
-            <button className={tab === 'all' ? 'active' : ''} onClick={() => setTab('all')}>
+            <button style={tabBtnStyle('all')} onClick={() => setTab('all')}>
               📋 All ({requests.length})
             </button>
           </div>
@@ -259,8 +267,8 @@ const DeletionRequestsManager = () => {
       </main>
 
       {/* Confirm modal */}
-      <Modal show={!!confirmModal} onHide={() => !actionLoading && setConfirmModal(null)} centered>
-        <Modal.Header closeButton={!actionLoading}
+      <Modal show={!!confirmModal} onHide={() => setConfirmModal(null)} centered>
+        <Modal.Header closeButton
           style={{ background: confirmModal?.action === 'approve' ? 'var(--ep-success-soft)' : 'var(--ep-danger-soft)',
                    borderBottom: 'none' }}>
           <Modal.Title style={{ color: confirmModal?.action === 'approve' ? 'var(--ep-success)' : 'var(--ep-danger)', fontSize: 18, fontWeight: 800 }}>
@@ -295,13 +303,12 @@ const DeletionRequestsManager = () => {
           )}
         </Modal.Body>
         <Modal.Footer style={{ borderTop: 'none', padding: '12px 24px 20px' }}>
-          <Button variant="light" onClick={() => setConfirmModal(null)} disabled={actionLoading}
+          <Button variant="light" onClick={() => setConfirmModal(null)}
             style={{ borderRadius: 10, fontWeight: 600, fontSize: 13.5 }}>
             Cancel
           </Button>
           <Button
             onClick={() => handleAction(confirmModal.id, confirmModal.action, confirmModal.type)}
-            disabled={actionLoading}
             style={{
               borderRadius: 10, fontWeight: 700, padding: '8px 24px', fontSize: 13.5,
               background: confirmModal?.action === 'approve'
