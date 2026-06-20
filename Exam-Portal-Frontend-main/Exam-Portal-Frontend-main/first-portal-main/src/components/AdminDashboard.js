@@ -274,7 +274,7 @@ const AdminDashboard = () => {
             </div>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 };
@@ -918,7 +918,7 @@ const CreateExam = () => {
             </div>
           </Modal.Body>
         </Modal>
-      </main>
+      </div>
     </div>
   );
 };
@@ -1681,10 +1681,10 @@ const AdminSettings = () => {
           
           <div>
             <label style={{ fontWeight: 600, fontSize: 13, color: '#444', display: 'block', marginBottom: 6 }}>Current Password</label>
-            <input type="password" style={inputStyle} value={oldPassword} onChange={e => setOldPassword(e.target.value)} onFocus={e => e.target.style.borderColor = 'var(--ep-brand)'} onBlur={e => e.target.style.borderColor = '#e0e0e0'} />
+            <input type="password" style={inputStyle} value={oldPassword} onChange={e => setOldPassword(e.target.value)} onFocus={e => e.target.style.borderColor = '#5B0A7B'} onBlur={e => e.target.style.borderColor = '#e0e0e0'} />
             
             <label style={{ fontWeight: 600, fontSize: 13, color: '#444', display: 'block', marginBottom: 6, marginTop: 10 }}>New Password</label>
-            <input type="password" style={inputStyle} value={newPassword} onChange={e => setNewPassword(e.target.value)} onFocus={e => e.target.style.borderColor = 'var(--ep-brand)'} onBlur={e => e.target.style.borderColor = '#e0e0e0'} />
+            <input type="password" style={inputStyle} value={newPassword} onChange={e => setNewPassword(e.target.value)} onFocus={e => e.target.style.borderColor = '#5B0A7B'} onBlur={e => e.target.style.borderColor = '#e0e0e0'} />
           </div>
 
           {saved && <Alert variant="success" style={{ borderRadius: 10, fontWeight: 600, marginTop: 16 }}>✓ Password updated successfully!</Alert>}
@@ -1913,8 +1913,6 @@ const ManageAdmins = () => {
               <strong>{admin?.name || 'Administrator'}</strong>
               <span>{adminEmail}</span>
             </div>
-          </div>
-        </div>
           </div>
         </div>
 
