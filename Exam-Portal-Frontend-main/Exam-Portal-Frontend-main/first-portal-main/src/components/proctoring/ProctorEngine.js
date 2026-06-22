@@ -55,6 +55,7 @@ const formatIllegalObject = (label) => {
 const ProctorEngine = ({ onViolation, isActive, onReady }) => {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const audioStreamRef = useRef(null);
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
   const sourceRef = useRef(null);
@@ -76,25 +77,27 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
 
     (async () => {
       try {
-        // 1) Camera + Mic
-        const stream = await navigator.mediaDevices.getUserMedia({
+        // 1) Camera first and by itself. Do NOT request mic together,
+        // because a microphone permission/device failure can reject the whole
+        // getUserMedia call and make the camera invisible.
+        const cameraStream = await navigator.mediaDevices.getUserMedia({
           video: {
             width: { ideal: 640 },
             height: { ideal: 480 },
             facingMode: 'user',
           },
-          audio: true,
+          audio: false,
         });
         if (!alive) {
-          stream.getTracks().forEach((t) => t.stop());
+          cameraStream.getTracks().forEach((t) => t.stop());
           return;
         }
-        streamRef.current = stream;
+        streamRef.current = cameraStream;
 
         // 2) Attach to <video> element. The element MUST be in the DOM
         //    (we render it below) for frames to be decoded reliably.
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+          videoRef.current.srcObject = cameraStream;
           // Wait until the video actually has frames to decode
           await new Promise((resolve) => {
             const v = videoRef.current;
@@ -112,20 +115,31 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
           }
         }
 
-        // 3) Audio analyser (optional — won't break detection if it fails)
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) {
-          try {
-            const ctx = new AudioCtx();
-            const an = ctx.createAnalyser();
-            const src = ctx.createMediaStreamSource(stream);
-            src.connect(an);
-            an.fftSize = 256;
-            audioCtxRef.current = ctx;
-            analyserRef.current = an;
-          } catch (e) {
-            console.warn('Audio analyser init failed (non-fatal):', e);
+        // 3) Audio analyser is optional. Continue camera proctoring even if
+        // mic permission is denied or no microphone exists.
+        try {
+          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          if (!alive) {
+            micStream.getTracks().forEach((t) => t.stop());
+            return;
           }
+          audioStreamRef.current = micStream;
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            try {
+              const ctx = new AudioCtx();
+              const an = ctx.createAnalyser();
+              const src = ctx.createMediaStreamSource(micStream);
+              src.connect(an);
+              an.fftSize = 256;
+              audioCtxRef.current = ctx;
+              analyserRef.current = an;
+            } catch (e) {
+              console.warn('Audio analyser init failed (non-fatal):', e);
+            }
+          }
+        } catch (micErr) {
+          console.warn('Microphone unavailable; continuing camera proctoring:', micErr?.message || micErr);
         }
 
         // 4) Load models in parallel — face-api is REQUIRED, coco-ssd is optional
@@ -176,6 +190,7 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
     return () => {
       alive = false;
       if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+      if (audioStreamRef.current) audioStreamRef.current.getTracks().forEach((t) => t.stop());
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
         try {
           audioCtxRef.current.close();
@@ -216,7 +231,7 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
       const last = lastViolationRef.current[type] || 0;
       if (now - last < CONFIG.violationCooldownMs) return;
       lastViolationRef.current[type] = now;
-      onViolation({ type, severity, message, image: captureFrame() });
+      onViolation({ type, severity, message, image: captureFrame(), timestamp: Date.now() });
     },
     [onViolation, captureFrame],
   );
