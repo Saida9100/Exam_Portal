@@ -38,12 +38,13 @@ const CreateExam = () => {
 
   // Success modal state
   const [createdExamCode, setCreatedExamCode] = useState('');
+  const [createdExamCodes, setCreatedExamCodes] = useState([]);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdExamTitle, setCreatedExamTitle] = useState('');
 
   // Admin assignment (for super admin)
   const [adminsList, setAdminsList] = useState([]);
-  const [selectedAdminId, setSelectedAdminId] = useState('');
+  const [selectedAdminIds, setSelectedAdminIds] = useState([]);
 
   useEffect(() => {
     if (user?.role === 'super_admin') {
@@ -112,6 +113,19 @@ const CreateExam = () => {
   const totalQ = parseInt(totalQuestions) || 0;
   const allAnswered = totalQ > 0 && answeredCount === totalQ;
 
+  const toggleAdminSelection = (adminId) => {
+    const id = String(adminId);
+    setSelectedAdminIds(prev => (
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    ));
+  };
+
+  const selectAllAdmins = () => {
+    setSelectedAdminIds(adminsList.map(a => String(a.id)));
+  };
+
+  const clearSelectedAdmins = () => setSelectedAdminIds([]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -124,8 +138,8 @@ const CreateExam = () => {
       setError(`Please set answers for all ${totalQ} questions in the Answer Key section.`);
       return;
     }
-    if (user?.role === 'super_admin' && !selectedAdminId) {
-      setError('Please assign this exam to an admin');
+    if (user?.role === 'super_admin' && selectedAdminIds.length === 0) {
+      setError('Please select at least one admin for this exam');
       return;
     }
     if (schedulingMode === 'upcoming' && !startTime) {
@@ -165,7 +179,9 @@ const CreateExam = () => {
       }
 
       if (user?.role === 'super_admin') {
-        formData.append('admin_id', selectedAdminId);
+        formData.append('admin_ids', JSON.stringify(selectedAdminIds));
+        // Backward compatibility for older backend versions.
+        formData.append('admin_id', selectedAdminIds[0]);
       }
 
       const data = await apiService.request('/api/exams/create-with-pdf', {
@@ -173,7 +189,14 @@ const CreateExam = () => {
         body: formData
       });
 
-      setCreatedExamCode(data.exam_code || data?.exam?.exam_code);
+      const createdExams = data.exams || (data.exam ? [data.exam] : []);
+      const codes = createdExams.map((ex) => ({
+        exam_code: ex.exam_code,
+        admin_id: ex.admin_id,
+        admin_name: ex.admin_name || ex.admin_email || `Admin #${ex.admin_id}`,
+      })).filter((ex) => ex.exam_code);
+      setCreatedExamCodes(codes);
+      setCreatedExamCode(data.exam_code || data?.exam?.exam_code || codes[0]?.exam_code || '');
       setCreatedExamTitle(data.title || title?.trim() || data?.exam?.title || "");
       setShowSuccessModal(true);
 
@@ -187,6 +210,7 @@ const CreateExam = () => {
       setSchedulingMode('immediate');
       setStartTime('');
       setAnswerKey({});
+      setSelectedAdminIds([]);
       removePdf();
 
     } catch (err) {
@@ -226,21 +250,46 @@ const CreateExam = () => {
             </p>
 
             {/* Code display */}
-            <div style={{
-              background: 'linear-gradient(135deg, #2D0040, #4a0070)',
-              borderRadius: 16, padding: '28px 40px', marginBottom: 32,
-              boxShadow: '0 4px 20px rgba(45,0,64,0.3)'
-            }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', letterSpacing: 3, marginBottom: 10 }}>
-                EXAM CODE
+            {createdExamCodes.length > 1 ? (
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#2D0040', letterSpacing: 1, marginBottom: 12 }}>
+                  EXAM CODES CREATED FOR {createdExamCodes.length} ADMINS
+                </div>
+                <div style={{ display: 'grid', gap: 10, maxHeight: 260, overflowY: 'auto', textAlign: 'left' }}>
+                  {createdExamCodes.map((item, idx) => (
+                    <div key={`${item.admin_id}-${item.exam_code}`} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                      background: 'linear-gradient(135deg, #2D0040, #4a0070)', borderRadius: 12,
+                      padding: '14px 16px', color: '#fff'
+                    }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 11, opacity: 0.65, fontWeight: 700 }}>ADMIN</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {item.admin_name}
+                        </div>
+                      </div>
+                      <div style={{ fontFamily: 'monospace', fontSize: 19, fontWeight: 900, letterSpacing: 2 }}>{item.exam_code}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
+            ) : (
               <div style={{
-                fontSize: 40, fontWeight: 900, color: '#fff', letterSpacing: 6,
-                fontFamily: 'monospace'
+                background: 'linear-gradient(135deg, #2D0040, #4a0070)',
+                borderRadius: 16, padding: '28px 40px', marginBottom: 32,
+                boxShadow: '0 4px 20px rgba(45,0,64,0.3)'
               }}>
-                {createdExamCode}
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', letterSpacing: 3, marginBottom: 10 }}>
+                  EXAM CODE
+                </div>
+                <div style={{
+                  fontSize: 40, fontWeight: 900, color: '#fff', letterSpacing: 6,
+                  fontFamily: 'monospace'
+                }}>
+                  {createdExamCode}
+                </div>
               </div>
-            </div>
+            )}
 
             <div style={{ color: '#666', fontSize: 14, marginBottom: 32 }}>
               Exam: <strong style={{ color: '#2D0040' }}>{createdExamTitle}</strong>
@@ -249,7 +298,10 @@ const CreateExam = () => {
             {/* Copy button */}
             <button
               onClick={() => {
-                navigator.clipboard.writeText(createdExamCode);
+                const text = createdExamCodes.length > 1
+                  ? createdExamCodes.map(x => `${x.admin_name}: ${x.exam_code}`).join('\n')
+                  : createdExamCode;
+                navigator.clipboard.writeText(text);
                 alert('Exam code copied to clipboard!');
               }}
               style={{
@@ -259,7 +311,7 @@ const CreateExam = () => {
                 cursor: 'pointer', marginBottom: 16, transition: 'all 0.2s'
               }}
             >
-              📋 Copy Code to Clipboard
+              📋 Copy {createdExamCodes.length > 1 ? 'All Codes' : 'Code'} to Clipboard
             </button>
 
             <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
@@ -483,20 +535,56 @@ const CreateExam = () => {
                 {/* Admin assignment for super admin */}
                 {user?.role === 'super_admin' && (
                   <div style={{ marginTop: 18 }}>
-                    <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13, color: '#555' }}>
-                      ASSIGN TO ADMIN <span style={{ color: '#f44336' }}>*</span>
-                    </label>
-                    <select
-                      value={selectedAdminId}
-                      onChange={(e) => setSelectedAdminId(e.target.value)}
-                      disabled={loading}
-                      style={{ width: '100%', padding: '11px 14px', fontSize: 14, border: '2px solid #e0e0e0', borderRadius: 10, outline: 'none', background: '#fff', boxSizing: 'border-box' }}
-                    >
-                      <option value="">-- Select an Admin --</option>
-                      {adminsList.map(a => (
-                        <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
-                      ))}
-                    </select>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <label style={{ fontWeight: 600, fontSize: 13, color: '#555' }}>
+                        ASSIGN TO ADMINS <span style={{ color: '#f44336' }}>*</span>
+                      </label>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button type="button" onClick={selectAllAdmins} disabled={loading || adminsList.length === 0}
+                          style={{ border: 'none', background: '#e8f5e9', color: '#2e7d32', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                          Select All
+                        </button>
+                        <button type="button" onClick={clearSelectedAdmins} disabled={loading || selectedAdminIds.length === 0}
+                          style={{ border: 'none', background: '#ffebee', color: '#c62828', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{
+                      border: '2px solid #e0e0e0', borderRadius: 10, background: '#fff',
+                      maxHeight: 210, overflowY: 'auto', padding: 8
+                    }}>
+                      {adminsList.length === 0 ? (
+                        <div style={{ padding: 14, color: '#888', fontSize: 13 }}>No admins available.</div>
+                      ) : adminsList.map(a => {
+                        const id = String(a.id);
+                        const checked = selectedAdminIds.includes(id);
+                        return (
+                          <label key={a.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+                            borderRadius: 8, cursor: loading ? 'not-allowed' : 'pointer',
+                            background: checked ? '#f0f4ff' : '#fff',
+                            border: checked ? '1px solid #667eea' : '1px solid transparent',
+                            marginBottom: 6
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={loading}
+                              onChange={() => toggleAdminSelection(id)}
+                              style={{ width: 18, height: 18, accentColor: '#667eea' }}
+                            />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, color: '#1a1a2e', fontSize: 13 }}>{a.name || a.email}</div>
+                              <div style={{ color: '#888', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.email}</div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <small style={{ color: selectedAdminIds.length ? '#2e7d32' : '#aaa', fontSize: 12, marginTop: 6, display: 'block', fontWeight: 600 }}>
+                      {selectedAdminIds.length} admin{selectedAdminIds.length !== 1 ? 's' : ''} selected. The same exam will be created separately for each selected admin.
+                    </small>
                   </div>
                 )}
               </div>
@@ -653,12 +741,12 @@ const CreateExam = () => {
               <div style={{ display: 'flex', gap: 14 }}>
                 <button
                   type="submit"
-                  disabled={loading || !pdfFile || !title || !totalQ || !duration || !allAnswered}
+                  disabled={loading || !pdfFile || !title || !totalQ || !duration || !allAnswered || (user?.role === 'super_admin' && selectedAdminIds.length === 0)}
                   style={{
                     flex: 1, padding: '15px 32px', fontSize: 15, fontWeight: 700, color: '#fff',
-                    background: (loading || !pdfFile || !allAnswered) ? '#ccc' : 'linear-gradient(135deg, #667eea, #764ba2)',
+                    background: (loading || !pdfFile || !allAnswered || (user?.role === 'super_admin' && selectedAdminIds.length === 0)) ? '#ccc' : 'linear-gradient(135deg, #667eea, #764ba2)',
                     border: 'none', borderRadius: 12,
-                    cursor: (loading || !pdfFile || !allAnswered) ? 'not-allowed' : 'pointer',
+                    cursor: (loading || !pdfFile || !allAnswered || (user?.role === 'super_admin' && selectedAdminIds.length === 0)) ? 'not-allowed' : 'pointer',
                     boxShadow: (loading || !pdfFile || !allAnswered) ? 'none' : '0 4px 15px rgba(102,126,234,0.4)',
                     transition: 'all 0.2s'
                   }}
@@ -706,14 +794,14 @@ const CreateExam = () => {
               <button
                 type="submit"
                 form="create-exam-form"
-                disabled={loading || !pdfFile || !title || !totalQ || !duration || !allAnswered}
+                disabled={loading || !pdfFile || !title || !totalQ || !duration || !allAnswered || (user?.role === 'super_admin' && selectedAdminIds.length === 0)}
                 onClick={handleSubmit}
                 style={{
                   width: '100%', marginTop: 16, padding: '13px',
-                  background: allAnswered && pdfFile && title ? 'linear-gradient(135deg, #667eea, #764ba2)' : '#e0e0e0',
+                  background: allAnswered && pdfFile && title && (user?.role !== 'super_admin' || selectedAdminIds.length > 0) ? 'linear-gradient(135deg, #667eea, #764ba2)' : '#e0e0e0',
                   border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
-                  color: allAnswered && pdfFile && title ? '#fff' : '#999',
-                  cursor: allAnswered && pdfFile && title ? 'pointer' : 'not-allowed',
+                  color: allAnswered && pdfFile && title && (user?.role !== 'super_admin' || selectedAdminIds.length > 0) ? '#fff' : '#999',
+                  cursor: allAnswered && pdfFile && title && (user?.role !== 'super_admin' || selectedAdminIds.length > 0) ? 'pointer' : 'not-allowed',
                   transition: 'all 0.2s'
                 }}
               >
