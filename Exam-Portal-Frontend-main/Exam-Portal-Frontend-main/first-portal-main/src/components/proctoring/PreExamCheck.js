@@ -35,10 +35,14 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
   const analyserRef = useRef(null);
   const scanTimerRef = useRef(null);
   const streamRef = useRef(null);
+  const audioStreamRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const nativeFaceDetectorRef = useRef(null);
   const faceApiLoadedRef = useRef(false);
 
   const [camRes, setCamRes] = useState('');
   const [audioLevel, setAudioLevel] = useState(0);
+  const [audioReady, setAudioReady] = useState(false);
   const [brightness, setBrightness] = useState(0);
   const [faceConf, setFaceConf] = useState(0);
 
@@ -64,16 +68,18 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
         setLightStatus('check');
         setFaceStatus('check');
 
-        const stream = await navigator.mediaDevices.getUserMedia({
+        // Request CAMERA first and alone. If microphone permission fails,
+        // the camera preview must still work for the pre-exam face check.
+        const cameraStream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-          audio: true,
+          audio: false,
         });
 
-        if (!active) { stream.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = stream;
+        if (!active) { cameraStream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = cameraStream;
 
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+          videoRef.current.srcObject = cameraStream;
           await new Promise((resolve) => {
             const v = videoRef.current;
             if (!v || v.readyState >= 2) return resolve();
@@ -85,7 +91,7 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
         }
 
         try {
-          const vt = stream.getVideoTracks()[0];
+          const vt = cameraStream.getVideoTracks()[0];
           if (vt) {
             const s = vt.getSettings();
             setCamRes(`${s.width || 640}x${s.height || 480}`);
@@ -93,20 +99,34 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
         } catch (e) { setCamRes('640x480'); }
         setCamStatus('good');
 
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) {
-          try {
-            const ctx = new AudioCtx();
-            const an = ctx.createAnalyser();
-            const src = ctx.createMediaStreamSource(stream);
-            src.connect(an);
-            an.fftSize = 256;
-            analyserRef.current = an;
-          } catch (e) { console.warn('Audio analyser init failed:', e); }
-        }
-        setMicStatus('good');
+        // Microphone is useful for audio violation monitoring but should not
+        // block the camera/face check. Request it separately.
+        try {
+          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          if (!active) { micStream.getTracks().forEach((t) => t.stop()); return; }
+          audioStreamRef.current = micStream;
 
-        setTimeout(() => { if (active) setShowOverride(true); }, 5000);
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            try {
+              const ctx = new AudioCtx();
+              const an = ctx.createAnalyser();
+              const src = ctx.createMediaStreamSource(micStream);
+              src.connect(an);
+              an.fftSize = 256;
+              audioCtxRef.current = ctx;
+              analyserRef.current = an;
+              setAudioReady(true);
+            } catch (e) { console.warn('Audio analyser init failed:', e); }
+          }
+          setMicStatus('good');
+        } catch (micErr) {
+          console.warn('Microphone permission unavailable; continuing with camera proctoring:', micErr?.message || micErr);
+          setMicStatus('warn');
+        }
+
+        // Face visibility is mandatory, so there is no skip button.
+        setShowOverride(false);
       } catch (err) {
         console.error('Media start error:', err);
         setErrorMsg('Camera or Microphone access denied. Please allow permissions in your browser settings and refresh the page.');
@@ -120,12 +140,16 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
     return () => {
       active = false;
       if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+      if (audioStreamRef.current) audioStreamRef.current.getTracks().forEach((t) => t.stop());
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        try { audioCtxRef.current.close(); } catch (e) { /* ignore */ }
+      }
     };
   }, []);
 
   // 2. Continuous Audio Meter
   useEffect(() => {
-    if (!analyserRef.current) return undefined;
+    if (!audioReady || !analyserRef.current) return undefined;
     const analyser = analyserRef.current;
     let running = true;
     const tick = () => {
@@ -144,7 +168,7 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
       running = false;
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, []);
+  }, [audioReady]);
 
   // 3. Lighting + Face scanner
   useEffect(() => {
@@ -173,6 +197,8 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
       } catch (e) { /* ignore */ }
 
       // Face API scan
+      let faceScanCompleted = false;
+
       if (window.faceapi && window.faceapi.nets && window.faceapi.nets.tinyFaceDetector) {
         try {
           if (!faceApiLoadedRef.current) {
@@ -193,7 +219,8 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
             }),
           );
 
-          if (dets && dets.length >= 1) {
+          faceScanCompleted = true;
+          if (dets && dets.length === 1) {
             const score = Math.round((dets[0].score || 0) * 100);
             setFaceConf(score);
             setFaceStatus('good');
@@ -202,8 +229,33 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
             setFaceStatus('bad');
           }
         } catch (err) {
-          // Ignore bad frame
+          // Fall through to native browser FaceDetector if face-api has a bad frame.
         }
+      }
+
+      // Native browser fallback. This helps when the face-api model CDN is slow
+      // or blocked but the browser supports built-in face detection.
+      if (!faceScanCompleted && 'FaceDetector' in window) {
+        try {
+          if (!nativeFaceDetectorRef.current) {
+            nativeFaceDetectorRef.current = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 3 });
+          }
+          const faces = await nativeFaceDetectorRef.current.detect(v);
+          faceScanCompleted = true;
+          if (faces.length === 1) {
+            setFaceConf(90);
+            setFaceStatus('good');
+          } else {
+            setFaceConf(0);
+            setFaceStatus('bad');
+          }
+        } catch (err) {
+          // Ignore and show pending until one detector succeeds.
+        }
+      }
+
+      if (!faceScanCompleted) {
+        setFaceStatus('check');
       }
 
       if (scanning) scanTimerRef.current = setTimeout(scanFrame, 800);
@@ -218,19 +270,11 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
   }, []);
 
   // 4. allReady
-  // FAST FIX: Do not block students because the AI face model/CDN is slow or blocked.
-  // Camera + microphone are required; face scan is advisory and proctoring continues in exam.
+  // Face visibility is mandatory before entering the exam. Microphone is
+  // advisory only, so a mic permission problem will not hide/break camera.
   useEffect(() => {
-    if (manualOverride) {
-      setAllReady(true);
-      return;
-    }
-    if (camStatus === 'good' && micStatus === 'good') {
-      setAllReady(true);
-    } else {
-      setAllReady(false);
-    }
-  }, [camStatus, micStatus, manualOverride]);
+    setAllReady(camStatus === 'good' && faceStatus === 'good');
+  }, [camStatus, faceStatus]);
 
   const brightPct = Math.round((brightness / 255) * 100);
   const audioPct = Math.round((audioLevel / 128) * 100);
@@ -441,8 +485,8 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
               padding: '10px 14px', borderRadius: 10, fontSize: 12,
               border: '1px solid #ffe0b2', lineHeight: 1.5,
             }}>
-              ⚠️ Face scan is taking longer than expected. You can still begin the exam after accepting the rules.
-              The camera will continue monitoring during the exam.
+              ⚠️ Keep your face centered inside the guide. The Begin button unlocks only after one face is detected.
+              Camera monitoring will continue during the exam.
             </div>
           )}
 
@@ -454,7 +498,7 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
             }}>{errorMsg}</div>
           )}
 
-          {(showOverride || faceStatus === 'bad') && !manualOverride && (
+          {false && (showOverride || faceStatus === 'bad') && !manualOverride && (
             <button
               onClick={handleManualOverride}
               style={{
@@ -470,7 +514,7 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
             </button>
           )}
 
-          {manualOverride && (
+          {false && manualOverride && (
             <div style={{
               marginTop: 14, background: '#fff3e0', color: '#e65100',
               padding: '10px 14px', borderRadius: 10, fontSize: 12,
@@ -499,8 +543,10 @@ const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
               ? '🚀 Begin Exam Now'
               : !agreedRules
               ? '⚠️ Please check the agreement box above first'
-              : camStatus !== 'good' || micStatus !== 'good'
-              ? '⚠️ Waiting for camera and microphone…'
+              : camStatus !== 'good'
+              ? '⚠️ Waiting for camera…'
+              : faceStatus !== 'good'
+              ? '⚠️ Waiting for face detection…'
               : '⚠️ Please accept the rules to begin'}
           </button>
         </div>
