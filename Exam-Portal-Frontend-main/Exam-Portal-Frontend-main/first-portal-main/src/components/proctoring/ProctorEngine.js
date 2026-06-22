@@ -45,10 +45,14 @@ const CONFIG = {
 const ILLEGAL_OBJECT_LABELS = new Set([
   'cell phone',
   'book',
+  'laptop',
+  'keyboard',
+  'remote',
 ]);
 
 const formatIllegalObject = (label) => {
   if (label === 'cell phone') return 'mobile phone';
+  if (label === 'laptop') return 'laptop/computer';
   return label;
 };
 
@@ -311,7 +315,7 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
             fireViolation(
               illegal.class === 'cell phone' ? 'Mobile Phone Detection' : 'Illegal Item Detection',
               'Critical',
-              `Illegal item detected: ${itemName} (${Math.round((illegal.score || 0) * 100)}% confidence). Snapshot captured and sent to admin.`,
+              `${itemName === 'mobile phone' ? 'Mobile phone detected' : `Illegal item detected: ${itemName}`} (${Math.round((illegal.score || 0) * 100)}% confidence). Snapshot captured and sent to admin.`,
             );
           }
           personCount = preds.filter(
