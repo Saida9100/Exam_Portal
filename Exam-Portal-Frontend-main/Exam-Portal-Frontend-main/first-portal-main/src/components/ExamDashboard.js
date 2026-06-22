@@ -79,18 +79,29 @@ const ExamDashboard = () => {
   const [missingFaceCount, setMissingFaceCount] = useState(0);
   const [audioViolationCount, setAudioViolationCount] = useState(0);
   const [multipleFaceCount, setMultipleFaceCount] = useState(0);
+  const [illegalObjectCount, setIllegalObjectCount] = useState(0);
+  const [facePresenceCount, setFacePresenceCount] = useState(0);
+  const [objectDetectionCount, setObjectDetectionCount] = useState(0);
   const [warningType, setWarningType] = useState('Tab Switch');
-  const MAX_MOBILE_WARNINGS = 5;
-  const MAX_MISSING_FACE_WARNINGS = 5;
+
+  // Final proctoring limits:
+  // Tab switch = 4 separate.
+  // No face + multiple person = 5 combined.
+  // Mobile phone + illegal item = 5 combined.
+  // Audio violation = 5 separate.
+  const MAX_TAB_SWITCHES = 4;
+  const MAX_FACE_PRESENCE_WARNINGS = 5;
+  const MAX_OBJECT_DETECTION_WARNINGS = 5;
   const MAX_AUDIO_WARNINGS = 5;
-  const MAX_MULTIPLE_FACE_WARNINGS = 5;
-  const MAX_TAB_SWITCHES = 5;
 
   const violationCountsRef = useRef({
     'Mobile Phone Detection': 0,
     'No Face Detected': 0,
     'Audio Violation': 0,
     'Multiple Person Detection': 0,
+    'Illegal Item Detection': 0,
+    'Face Presence Group': 0,
+    'Object Detection Group': 0,
     'Tab Switch': 0,
   });
   const lastViolationTimesRef = useRef({});
@@ -320,38 +331,65 @@ const ExamDashboard = () => {
 
     let maxLimit = 0;
     let currentCount = 0;
+    let groupLabel = '';
 
     if (violation.type === 'Mobile Phone Detection') {
       violationCountsRef.current['Mobile Phone Detection'] += 1;
-      currentCount = violationCountsRef.current['Mobile Phone Detection'];
-      setMobileDetectCount(currentCount);
-      maxLimit = MAX_MOBILE_WARNINGS;
+      setMobileDetectCount(violationCountsRef.current['Mobile Phone Detection']);
+      violationCountsRef.current['Object Detection Group'] += 1;
+      currentCount = violationCountsRef.current['Object Detection Group'];
+      setObjectDetectionCount(currentCount);
+      maxLimit = MAX_OBJECT_DETECTION_WARNINGS;
+      groupLabel = 'Mobile phone / illegal item combined';
+    } else if (violation.type === 'Illegal Item Detection') {
+      violationCountsRef.current['Illegal Item Detection'] += 1;
+      setIllegalObjectCount(violationCountsRef.current['Illegal Item Detection']);
+      violationCountsRef.current['Object Detection Group'] += 1;
+      currentCount = violationCountsRef.current['Object Detection Group'];
+      setObjectDetectionCount(currentCount);
+      maxLimit = MAX_OBJECT_DETECTION_WARNINGS;
+      groupLabel = 'Mobile phone / illegal item combined';
     } else if (violation.type === 'No Face Detected') {
       violationCountsRef.current['No Face Detected'] += 1;
-      currentCount = violationCountsRef.current['No Face Detected'];
-      setMissingFaceCount(currentCount);
-      maxLimit = MAX_MISSING_FACE_WARNINGS;
+      setMissingFaceCount(violationCountsRef.current['No Face Detected']);
+      violationCountsRef.current['Face Presence Group'] += 1;
+      currentCount = violationCountsRef.current['Face Presence Group'];
+      setFacePresenceCount(currentCount);
+      maxLimit = MAX_FACE_PRESENCE_WARNINGS;
+      groupLabel = 'No face / multiple person combined';
+    } else if (violation.type === 'Multiple Person Detection') {
+      violationCountsRef.current['Multiple Person Detection'] += 1;
+      setMultipleFaceCount(violationCountsRef.current['Multiple Person Detection']);
+      violationCountsRef.current['Face Presence Group'] += 1;
+      currentCount = violationCountsRef.current['Face Presence Group'];
+      setFacePresenceCount(currentCount);
+      maxLimit = MAX_FACE_PRESENCE_WARNINGS;
+      groupLabel = 'No face / multiple person combined';
     } else if (violation.type === 'Audio Violation') {
       violationCountsRef.current['Audio Violation'] += 1;
       currentCount = violationCountsRef.current['Audio Violation'];
       setAudioViolationCount(currentCount);
       maxLimit = MAX_AUDIO_WARNINGS;
-    } else if (violation.type === 'Multiple Person Detection') {
-      violationCountsRef.current['Multiple Person Detection'] += 1;
-      currentCount = violationCountsRef.current['Multiple Person Detection'];
-      setMultipleFaceCount(currentCount);
-      maxLimit = MAX_MULTIPLE_FACE_WARNINGS;
+      groupLabel = 'Audio';
     }
 
     if (maxLimit > 0) {
       if (currentCount >= maxLimit) {
-        setWarningMessage(`${violation.message}\nLimit reached (${maxLimit} times).\nYour exam is now being auto-submitted.`);
+        setWarningMessage(`${violation.message}
+
+${groupLabel} limit reached (${currentCount}/${maxLimit}).
+Your exam is now being auto-submitted.`);
         setWarningType(violation.type);
         setShowWarningModal(true);
-        setTimeout(() => { setShowWarningModal(false); handleForceSubmit(`${violation.type} Limit Exceeded`); }, 3000);
+        setTimeout(() => { setShowWarningModal(false); handleForceSubmit(`${groupLabel || violation.type} Limit Exceeded`); }, 3000);
       } else {
         const remaining = maxLimit - currentCount;
-        setWarningMessage(`AI Proctoring Warning:\n\n${violation.message}\n\n${remaining} warning${remaining === 1 ? '' : 's'} remaining before auto-submission.`);
+        setWarningMessage(`AI Proctoring Warning:
+
+${violation.message}
+
+${groupLabel}: ${currentCount}/${maxLimit}.
+${remaining} warning${remaining === 1 ? '' : 's'} remaining before auto-submission.`);
         setWarningType(violation.type);
         setShowWarningModal(true);
       }
@@ -696,17 +734,15 @@ const ExamDashboard = () => {
           setShowWarningModal={setShowWarningModal} 
           activeCount={
             warningType === 'Tab Switch' ? tabSwitchCount : 
-            warningType === 'Mobile Phone Detection' ? mobileDetectCount : 
-            warningType === 'No Face Detected' ? missingFaceCount : 
-            warningType === 'Audio Violation' ? audioViolationCount : 
-            warningType === 'Multiple Person Detection' ? multipleFaceCount : 0
+            warningType === 'Mobile Phone Detection' || warningType === 'Illegal Item Detection' ? objectDetectionCount :
+            warningType === 'No Face Detected' || warningType === 'Multiple Person Detection' ? facePresenceCount :
+            warningType === 'Audio Violation' ? audioViolationCount : 0
           } 
           maxCount={
             warningType === 'Tab Switch' ? MAX_TAB_SWITCHES : 
-            warningType === 'Mobile Phone Detection' ? MAX_MOBILE_WARNINGS : 
-            warningType === 'No Face Detected' ? MAX_MISSING_FACE_WARNINGS : 
-            warningType === 'Audio Violation' ? MAX_AUDIO_WARNINGS : 
-            warningType === 'Multiple Person Detection' ? MAX_MULTIPLE_FACE_WARNINGS : 0
+            warningType === 'Mobile Phone Detection' || warningType === 'Illegal Item Detection' ? MAX_OBJECT_DETECTION_WARNINGS :
+            warningType === 'No Face Detected' || warningType === 'Multiple Person Detection' ? MAX_FACE_PRESENCE_WARNINGS :
+            warningType === 'Audio Violation' ? MAX_AUDIO_WARNINGS : 0
           } 
           warningMessage={warningMessage} 
           warningType={warningType}
@@ -825,17 +861,15 @@ const ExamDashboard = () => {
         setShowWarningModal={setShowWarningModal} 
         activeCount={
           warningType === 'Tab Switch' ? tabSwitchCount : 
-          warningType === 'Mobile Phone Detection' ? mobileDetectCount : 
-          warningType === 'No Face Detected' ? missingFaceCount : 
-          warningType === 'Audio Violation' ? audioViolationCount : 
-          warningType === 'Multiple Person Detection' ? multipleFaceCount : 0
+          warningType === 'Mobile Phone Detection' || warningType === 'Illegal Item Detection' ? objectDetectionCount :
+          warningType === 'No Face Detected' || warningType === 'Multiple Person Detection' ? facePresenceCount :
+          warningType === 'Audio Violation' ? audioViolationCount : 0
         } 
         maxCount={
           warningType === 'Tab Switch' ? MAX_TAB_SWITCHES : 
-          warningType === 'Mobile Phone Detection' ? MAX_MOBILE_WARNINGS : 
-          warningType === 'No Face Detected' ? MAX_MISSING_FACE_WARNINGS : 
-          warningType === 'Audio Violation' ? MAX_AUDIO_WARNINGS : 
-          warningType === 'Multiple Person Detection' ? MAX_MULTIPLE_FACE_WARNINGS : 0
+          warningType === 'Mobile Phone Detection' || warningType === 'Illegal Item Detection' ? MAX_OBJECT_DETECTION_WARNINGS :
+          warningType === 'No Face Detected' || warningType === 'Multiple Person Detection' ? MAX_FACE_PRESENCE_WARNINGS :
+          warningType === 'Audio Violation' ? MAX_AUDIO_WARNINGS : 0
         } 
         warningMessage={warningMessage} 
         warningType={warningType}
