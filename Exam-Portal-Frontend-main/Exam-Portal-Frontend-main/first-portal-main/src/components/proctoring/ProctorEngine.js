@@ -31,15 +31,22 @@ const FACE_MODEL_URL_FALLBACK =
 
 // Tunables — these are deliberately forgiving so legit students don't get kicked out
 const CONFIG = {
-  detectIntervalMs: 2000,           // poll every 2 s (was 3 s, faster = more responsive)
-  warmupMs: 10000,                  // give camera + model 10 s to settle before counting violations
-  noFaceGraceMs: 30000,             // continuous "no face" before violation (more forgiving)
-  multiPersonFrames: 5,             // frames needed before "multiple person" (was 8)
-  scoreThreshold: 0.4,              // face-api confidence (was 0.5)
-  inputSize: 320,                   // 416 was slow; 320 is a good speed/accuracy trade-off
-  objectConfidence: 0.55,           // phone confidence; slightly forgiving for better capture
-  audioAvgThreshold: 120,           // raw 0-255 audio threshold (was 100)
-  violationCooldownMs: 15000,       // 15 s between violations of same type
+  // Performance-safe timings. Running face-api + coco-ssd every 2 seconds was
+  // causing exam UI/buttons to feel stuck on low-end laptops.
+  detectIntervalMs: 3000,
+  faceDetectEveryMs: 3000,
+  objectDetectEveryMs: 12000,
+  audioDetectEveryMs: 4000,
+  warmupMs: 10000,
+  noFaceGraceMs: 30000,
+  multiPersonFrames: 3,
+  scoreThreshold: 0.4,
+  inputSize: 224,
+  objectConfidence: 0.55,
+  audioAvgThreshold: 120,
+  violationCooldownMs: 15000,
+  analysisWidth: 320,
+  analysisHeight: 240,
 };
 
 const ILLEGAL_OBJECT_LABELS = new Set([
@@ -64,6 +71,11 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
   const analyserRef = useRef(null);
   const sourceRef = useRef(null);
   const cocoModelRef = useRef(null);
+  const analysisCanvasRef = useRef(null);
+  const detectRunningRef = useRef(false);
+  const lastFaceDetectRef = useRef(0);
+  const lastObjectDetectRef = useRef(0);
+  const lastAudioDetectRef = useRef(0);
 
   // ✅ FIX: start as null, not Date.now() — proper cold start
   const noFaceStartRef = useRef(null);
@@ -86,9 +98,10 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
         // getUserMedia call and make the camera invisible.
         const cameraStream = await navigator.mediaDevices.getUserMedia({
           video: {
-            width: { ideal: 640 },
-            height: { ideal: 480 },
+            width: { ideal: 424 },
+            height: { ideal: 240 },
             facingMode: 'user',
+            frameRate: { ideal: 10, max: 15 },
           },
           audio: false,
         });
@@ -166,22 +179,26 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
           );
         }
 
-        // Load coco-ssd for object detection (best-effort)
-        if (window.cocoSsd) {
-          try {
-            const m = await window.cocoSsd.load();
-            cocoModelRef.current = m;
-          } catch (e) {
-            console.warn('coco-ssd load failed (non-fatal):', e);
-          }
-        }
-
         if (!alive) return;
 
-        // ✅ Mark engine ready AND start the warmup clock
+        // Mark engine ready before loading the heavier object model so exam UI
+        // remains responsive. Phone/object detection starts once coco is ready.
         warmupStartRef.current = Date.now();
         setEngineReady(true);
         if (onReady) onReady();
+
+        // Load coco-ssd lazily in the background (best-effort). Do not block
+        // rendering/buttons while this larger model downloads/initializes.
+        if (window.cocoSsd) {
+          window.setTimeout(async () => {
+            try {
+              const m = await window.cocoSsd.load();
+              if (alive) cocoModelRef.current = m;
+            } catch (e) {
+              console.warn('coco-ssd load failed (non-fatal):', e);
+            }
+          }, 2500);
+        }
       } catch (err) {
         console.error('Proctoring Engine Init Error:', err);
         setInitError(
@@ -240,73 +257,82 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
     [onViolation, captureFrame],
   );
 
+  const getAnalysisCanvas = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return null;
+    let canvas = analysisCanvasRef.current;
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      analysisCanvasRef.current = canvas;
+    }
+    canvas.width = CONFIG.analysisWidth;
+    canvas.height = CONFIG.analysisHeight;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }, []);
+
+  const yieldToBrowser = () => new Promise((resolve) => {
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(resolve, { timeout: 700 });
+    } else {
+      window.setTimeout(resolve, 0);
+    }
+  });
+
   // ── Main detection loop ───────────────────────────────────
   const detect = useCallback(async () => {
-    if (!engineReady) return;
-    if (!isActive) return;
+    if (!engineReady || !isActive) return;
+    if (detectRunningRef.current) return;
+
     const video = videoRef.current;
     if (!video || video.paused || video.ended || !video.videoWidth) return;
 
-    // ✅ WARMUP: skip ALL violation logic during warmup so model-load
-    //    latency doesn't count against the student.
-    if (
-      warmupStartRef.current &&
-      Date.now() - warmupStartRef.current < CONFIG.warmupMs
-    ) {
+    if (warmupStartRef.current && Date.now() - warmupStartRef.current < CONFIG.warmupMs) {
       return;
     }
 
-    const faceapi = window.faceapi;
-    const cocoModel = cocoModelRef.current;
+    detectRunningRef.current = true;
 
     try {
+      await yieldToBrowser();
+
+      const now = Date.now();
+      const faceapi = window.faceapi;
+      const cocoModel = cocoModelRef.current;
+      const frame = getAnalysisCanvas();
+      if (!frame) return;
+
       let faceCount = 0;
       let personCount = 0;
       let faceApiWorked = false;
 
-      // ── 1. Face detection (face-api) ─────────────────────────
-      if (faceapi && faceapi.detectAllFaces) {
-        try {
-          const detections = await faceapi.detectAllFaces(
-            video,
-            new faceapi.TinyFaceDetectorOptions({
-              inputSize: CONFIG.inputSize,
-              scoreThreshold: CONFIG.scoreThreshold,
-            }),
-          );
-          faceCount = detections.length;
-          faceApiWorked = true;
-        } catch (e) {
-          // bad frame — skip without counting
+      // 1) Face detection: lightweight, downscaled, throttled.
+      if (now - lastFaceDetectRef.current >= CONFIG.faceDetectEveryMs) {
+        lastFaceDetectRef.current = now;
+        if (faceapi && faceapi.detectAllFaces) {
+          try {
+            const detections = await faceapi.detectAllFaces(
+              frame,
+              new faceapi.TinyFaceDetectorOptions({
+                inputSize: CONFIG.inputSize,
+                scoreThreshold: CONFIG.scoreThreshold,
+              }),
+            );
+            faceCount = detections.length;
+            faceApiWorked = true;
+          } catch (e) {
+            // bad frame — skip without counting
+          }
         }
       }
 
-      // ── 1b. Canvas-luminance fallback ────────────────────────
-      // If face-api didn't find a face, do a brightness sanity check
-      // so we don't false-positive on a black screen.
-      let frameIsAlive = true;
-      try {
-        const c = document.createElement('canvas');
-        c.width = 64;
-        c.height = 48;
-        const ctx = c.getContext('2d');
-        ctx.drawImage(video, 0, 0, 64, 48);
-        const d = ctx.getImageData(0, 0, 64, 48).data;
-        let sum = 0;
-        for (let i = 0; i < d.length; i += 4) {
-          sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
-        }
-        const avg = sum / (d.length / 4);
-        // If frame is nearly black (< 8) treat as "camera off" not "no face"
-        frameIsAlive = avg > 8;
-      } catch (e) {
-        /* ignore */
-      }
-
-      // ── 2. Object detection (coco-ssd) ───────────────────────
-      if (cocoModel) {
+      // 2) Object/mobile detection: heavy, so run much less often.
+      if (cocoModel && now - lastObjectDetectRef.current >= CONFIG.objectDetectEveryMs) {
+        lastObjectDetectRef.current = now;
         try {
-          const preds = await cocoModel.detect(video);
+          await yieldToBrowser();
+          const preds = await cocoModel.detect(frame);
           const illegal = preds
             .filter((p) => ILLEGAL_OBJECT_LABELS.has(p.class) && p.score >= CONFIG.objectConfidence)
             .sort((a, b) => b.score - a.score)[0];
@@ -318,15 +344,13 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
               `${itemName === 'mobile phone' ? 'Mobile phone detected' : `Illegal item detected: ${itemName}`} (${Math.round((illegal.score || 0) * 100)}% confidence). Snapshot captured and sent to admin.`,
             );
           }
-          personCount = preds.filter(
-            (p) => p.class === 'person' && p.score >= 0.5,
-          ).length;
+          personCount = preds.filter((p) => p.class === 'person' && p.score >= 0.5).length;
         } catch (e) {
           /* skip */
         }
       }
 
-      // ── 3. Multi-person tracking ─────────────────────────────
+      // 3) Multi-person tracking. Prefer face count; fall back to person count.
       const peopleNow = Math.max(faceCount, personCount);
       if (peopleNow > 1) {
         multiPersonCountRef.current += 1;
@@ -338,34 +362,29 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
           );
           multiPersonCountRef.current = 0;
         }
-      } else {
+      } else if (peopleNow === 1) {
         multiPersonCountRef.current = 0;
       }
 
-      // ── 4. "No face" check (with proper cold-start logic) ────
-      // FAST FIX: only enforce no-face when face-api actually ran successfully.
-      // If the model/CDN is blocked, do NOT punish students with false no-face warnings.
+      // 4) No-face check only when face-api actually ran this cycle.
       const isMissingFace = faceApiWorked && faceCount === 0;
-
-      const now = Date.now();
       if (isMissingFace) {
-        if (noFaceStartRef.current == null) {
-          noFaceStartRef.current = now; // ✅ FIX: cold start
-        }
+        if (noFaceStartRef.current == null) noFaceStartRef.current = now;
         if (now - noFaceStartRef.current > CONFIG.noFaceGraceMs) {
           fireViolation(
             'No Face Detected',
             'High',
             'Your face has not been visible for 30 seconds. Please look at the camera and ensure good lighting.',
           );
-          noFaceStartRef.current = now; // reset to avoid rapid-fire
+          noFaceStartRef.current = now;
         }
-      } else {
-        noFaceStartRef.current = null; // ✅ FIX: reset on detection
+      } else if (faceApiWorked && faceCount > 0) {
+        noFaceStartRef.current = null;
       }
 
-      // ── 5. Audio monitoring ──────────────────────────────────
-      if (analyserRef.current) {
+      // 5) Audio monitoring: cheap but still throttled.
+      if (analyserRef.current && now - lastAudioDetectRef.current >= CONFIG.audioDetectEveryMs) {
+        lastAudioDetectRef.current = now;
         try {
           const buf = analyserRef.current.frequencyBinCount;
           const data = new Uint8Array(buf);
@@ -373,11 +392,7 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
           let sum = 0;
           for (let i = 0; i < buf; i++) sum += data[i];
           if (sum / buf > CONFIG.audioAvgThreshold) {
-            fireViolation(
-              'Audio Violation',
-              'Medium',
-              'Loud background noise or talking detected.',
-            );
+            fireViolation('Audio Violation', 'Medium', 'Loud background noise or talking detected.');
           }
         } catch (e) {
           /* skip */
@@ -385,8 +400,10 @@ const ProctorEngine = ({ onViolation, isActive, onReady }) => {
       }
     } catch (err) {
       console.warn('Analysis iteration failed:', err);
+    } finally {
+      detectRunningRef.current = false;
     }
-  }, [engineReady, isActive, fireViolation]);
+  }, [engineReady, isActive, fireViolation, getAnalysisCanvas]);
 
   // ── Schedule detection loop ───────────────────────────────
   useEffect(() => {
