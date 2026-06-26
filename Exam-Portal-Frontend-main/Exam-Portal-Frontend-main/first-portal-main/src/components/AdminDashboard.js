@@ -978,6 +978,14 @@ const ManageExams = () => {
 
   const finalFilteredExams = filterByDateRange(searchFilteredExams, exportFilters.startDate, exportFilters.endDate, 'created_at');
 
+  const getExamAdmin = (exam) => {
+    const found = adminsList.find(a => String(a.id) === String(exam.admin_id));
+    return {
+      name: exam.admin_name || found?.name || found?.email || (exam.admin_id ? `Admin #${exam.admin_id}` : '—'),
+      email: exam.admin_email || found?.email || '',
+    };
+  };
+
   const handleLogout = () => {
     apiService.logout();
   };
@@ -1141,6 +1149,9 @@ const ManageExams = () => {
               <thead>
                 <tr style={{ background: '#F8F0FB' }}>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Title</th>
+                  {admin?.role === 'super_admin' && (
+                    <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Assigned Admin</th>
+                  )}
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Questions</th>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Duration</th>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Start Time</th>
@@ -1152,7 +1163,7 @@ const ManageExams = () => {
                 <tbody>
                   {finalFilteredExams.length === 0 ? (
                     <tr>
-                      <td colSpan="7" style={{ padding: 40, textAlign: 'center', color: '#888' }}>
+                      <td colSpan={admin?.role === 'super_admin' ? 8 : 7} style={{ padding: 40, textAlign: 'center', color: '#888' }}>
                         No matching exams found.
                       </td>
                     </tr>
@@ -1166,6 +1177,23 @@ const ManageExams = () => {
                         <div style={{ fontWeight: 600, color: '#2D0040' }}>{exam.title}</div>
                         <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{cleanExamDescription(exam.description)}</div>
                       </td>
+                      {admin?.role === 'super_admin' && (() => {
+                        const assignedAdmin = getExamAdmin(exam);
+                        return (
+                          <td style={{ padding: 12 }}>
+                            <div style={{ fontWeight: 700, color: '#2D0040', fontSize: 13 }}>{assignedAdmin.name}</div>
+                            {assignedAdmin.email && (
+                              <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>{assignedAdmin.email}</div>
+                            )}
+                            <div style={{
+                              display: 'inline-block', marginTop: 5, padding: '2px 8px', borderRadius: 999,
+                              background: '#f0f4ff', color: '#5B0A7B', fontSize: 11, fontWeight: 700
+                            }}>
+                              ID: {exam.admin_id || '—'}
+                            </div>
+                          </td>
+                        );
+                      })()}
                       <td style={{ padding: 12 }}>{exam.total_questions}</td>
                       <td style={{ padding: 12 }}>{exam.duration} min</td>
                       <td style={{ padding: 12, fontSize: 13, color: '#e65100', fontWeight: 600 }}>
