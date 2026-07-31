@@ -1,5 +1,5 @@
 // src/services/api.js
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://exam-portal-backend-rzxz.onrender.com';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://exam-backend-eg8c.onrender.com';
 
 
 
@@ -107,6 +107,10 @@ class ApiService {
 
 
 
+  async verifyToken() {
+    return this.request('/api/verify-token');
+  }
+
   logout() {
     localStorage.removeItem('jwt_token');
     localStorage.removeItem('user');
@@ -181,6 +185,13 @@ class ApiService {
     return this.request(`/api/exam/${examId}/submit`, {
       method: 'POST',
       body: JSON.stringify({ answers, time_taken, violations }),
+    });
+  }
+
+  async reportViolation(examId, violation) {
+    return this.request(`/api/exam/${examId}/report-violation`, {
+      method: 'POST',
+      body: JSON.stringify({ violation }),
     });
   }
 

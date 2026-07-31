@@ -5,6 +5,8 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Spinner, Alert } from 'react-bootstrap';
 import Sidebar from './Sidebar';
 import apiService from '../services/api';
+import ExportToolbar from './ExportToolbar';
+import { prepareStudentResultsForExport, getExportFilename, filterByDateRange } from '../utils/exportUtils';
 
 const ResultPage = () => {
   const { attemptId } = useParams();
@@ -18,6 +20,8 @@ const ResultPage = () => {
 
   const [result, setResult] = useState(null);
   const [allResults, setAllResults] = useState([]);
+  const [examDeadline, setExamDeadline] = useState(null);
+  const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -36,8 +40,67 @@ const ResultPage = () => {
       setLoading(true);
       setError('');
       const data = await apiService.getResult(attemptId);
-      // Normalise: backend may wrap data
-      setResult(data?.data || data);
+      let resultData = data?.data || data;
+      
+      console.log('📊 Raw result data from backend:', JSON.stringify(resultData, null, 2));
+
+      if (resultData.answers && Array.isArray(resultData.answers)) {
+        resultData = {
+          ...resultData,
+          answers: resultData.answers.map(a => ({
+            student_answer: a.student_answer ?? a.selected_option ?? a.selected_answer ?? a.answer ?? null,
+            correct_answer: a.correct_answer ?? a.correctOption ?? a.correct ?? null,
+            is_correct: a.is_correct ?? a.correct ?? false,
+            question_id: a.question_id ?? a.qid ?? null,
+            question_number: a.question_number ?? a.qno ?? a.questionNo ?? null,
+          }))
+        };
+      }
+
+      if (resultData.answers && Array.isArray(resultData.answers)) {
+        const realAttempted = resultData.answers.filter(
+          a => a.student_answer != null && a.student_answer !== '' && a.student_answer !== 'null' && a.student_answer !== 'undefined'
+        ).length;
+        const backendAttempted = resultData.attempted ?? 0;
+        if (realAttempted > backendAttempted) {
+          resultData.attempted = realAttempted;
+          resultData.unanswered = (resultData.total_questions ?? resultData.answers.length) - realAttempted;
+        }
+      }
+
+      let fetchedDeadline = resultData.deadline || resultData.exam?.deadline || resultData.exam_deadline || null;
+
+      if (!fetchedDeadline && resultData.exam_id) {
+        try {
+          const qData = await apiService.getExamQuestions(resultData.exam_id);
+          if (qData && qData.exam && qData.exam.deadline) {
+            fetchedDeadline = qData.exam.deadline;
+          }
+        } catch (err) { console.warn("Could not fetch by exam_id", err); }
+      }
+
+      if (!fetchedDeadline && resultData.exam_code) {
+        try {
+          const cData = await apiService.getExamByCode(resultData.exam_code);
+          if (cData && cData.exam && cData.exam.deadline) {
+            fetchedDeadline = cData.exam.deadline;
+          }
+        } catch (err) { console.warn("Could not fetch by code", err); }
+      }
+
+      if (!fetchedDeadline) {
+        try {
+          const allExamsData = await apiService.getExams();
+          const list = allExamsData?.exams || allExamsData || [];
+          const found = list.find(e => String(e.id) === String(resultData.exam_id) || (e.title && e.title === resultData.exam_title));
+          if (found && found.deadline) {
+            fetchedDeadline = found.deadline;
+          }
+        } catch (err) { console.warn("Could not match from list", err); }
+      }
+
+      setExamDeadline(fetchedDeadline);
+      setResult(resultData);
     } catch (err) {
       setError(err.message || 'Failed to fetch results');
     } finally {
@@ -60,10 +123,17 @@ const ResultPage = () => {
 
   const handleLogout = () => apiService.logout();
 
-  // ─── Download Answer Key ─────────────────────────────────────────────────
+  const finalAllResults = filterByDateRange(allResults, exportFilters.startDate, exportFilters.endDate, 'submitted_at');
 
+  const isAnswerKeyLocked = examDeadline && new Date(examDeadline) > new Date();
+
+  // ─── Download Answer Key ─────────────────────────────────────────────────
   const downloadAnswerKey = () => {
     if (!result) return;
+    if (isAnswerKeyLocked) {
+      alert("Answer Key is locked to prevent leaking answers while the exam is still active. Please check back after the exam deadline.");
+      return;
+    }
 
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
@@ -81,7 +151,7 @@ const ResultPage = () => {
         let statusText, statusColor;
         const rowBg = index % 2 === 0 ? '#fff' : '#fafafa';
 
-        if (!studentAns) {
+        if (!studentAns || studentAns === '' || studentAns === 'null' || studentAns === 'undefined') {
           statusText = 'Not Answered'; statusColor = '#ff9800'; unansweredCount++;
         } else if (isCorrect) {
           statusText = 'Correct'; statusColor = '#4caf50'; correctCount++;
@@ -91,13 +161,13 @@ const ResultPage = () => {
 
         answerRows += `
           <tr style="background:${rowBg};">
-            <td style="padding:10px 16px;border-bottom:1px solid #eee;font-weight:700;text-align:center;color:#2D0040;">${index + 1}</td>
+            <td style="padding:10px 16px;border-bottom:1px solid #eee;font-weight:700;text-align:center;color:#0f172a;">${index + 1}</td>
             <td style="padding:10px 16px;border-bottom:1px solid #eee;text-align:center;">
               <span style="display:inline-block;padding:4px 16px;border-radius:20px;font-weight:700;background:#e8f5e9;color:#2e7d32;">
                 ${correctAnswer || '—'}
               </span>
             </td>
-            <td style="padding:10px 16px;border-bottom:1px solid #eee;text-align:center;font-weight:600;color:${studentAns ? '#2D0040' : '#ccc'};">
+            <td style="padding:10px 16px;border-bottom:1px solid #eee;text-align:center;font-weight:600;color:${studentAns ? '#0f172a' : '#ccc'};">
               ${studentAns || '—'}
             </td>
             <td style="padding:10px 16px;border-bottom:1px solid #eee;text-align:center;">
@@ -118,7 +188,7 @@ const ResultPage = () => {
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family:'Segoe UI',Tahoma,sans-serif; background:#f5f5f5; padding:40px; }
     .container { max-width:800px; margin:0 auto; background:#fff; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.1); overflow:hidden; }
-    .header { background:linear-gradient(135deg,#667eea,#764ba2); color:#fff; padding:28px 32px; }
+    .header { background:linear-gradient(135deg,#4f46e5,#6366f1); color:#fff; padding:28px 32px; }
     .header h1 { font-size:20px; margin-bottom:4px; }
     .header p { font-size:13px; opacity:0.7; }
     .header .badge { display:inline-block; background:rgba(255,255,255,0.15); padding:4px 14px; border-radius:20px; font-size:12px; margin-top:8px; }
@@ -131,7 +201,7 @@ const ResultPage = () => {
     .score-box { background:#f8f9fa; border-radius:10px; padding:16px; text-align:center; }
     .score-box .num { font-size:24px; font-weight:700; }
     .score-box .lbl { font-size:10px; color:#888; text-transform:uppercase; margin-top:4px; }
-    .green { color:#4caf50; } .red { color:#e53935; } .orange { color:#ff9800; } .blue { color:#667eea; }
+    .green { color:#16a34a; } .red { color:#dc2626; } .orange { color:#d97706; } .blue { color:#4f46e5; }
     .section-title { font-size:15px; font-weight:700; color:#333; margin:24px 0 12px; padding-bottom:8px; border-bottom:2px solid #e0e0e0; }
     table { width:100%; border-collapse:collapse; }
     th { padding:10px 16px; text-align:center; font-size:12px; color:#555; text-transform:uppercase; background:#f8f9fa; }
@@ -161,7 +231,7 @@ const ResultPage = () => {
         <div class="score-box"><div class="num red">${wrongCount}</div><div class="lbl">Wrong</div></div>
         <div class="score-box"><div class="num orange">${unansweredCount}</div><div class="lbl">Skipped</div></div>
       </div>
-      <div style="text-align: center; margin-bottom: 24px; padding: 16px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 10px;">
+      <div style="text-align: center; margin-bottom: 24px; padding: 16px; background: linear-gradient(135deg, #4f46e5, #6366f1); color: white; border-radius: 10px;">
         <div style="font-size: 14px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.9;">Total Score</div>
         <div style="font-size: 32px; font-weight: 800;">${correctCount} / ${result.total_questions}</div>
         <div style="font-size: 14px; opacity: 0.9;">${result.total_questions > 0 ? ((correctCount / result.total_questions) * 100).toFixed(1) : 0}% Correct</div>
@@ -179,21 +249,21 @@ const ResultPage = () => {
 </body>
 </html>`;
 
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `AnswerKey_${result.exam_code || result.exam_title.replace(/\s+/g,'_')}.html`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
   };
 
   // ─── Print Report ─────────────────────────────────────────────────────────
-
   const printReport = () => {
     if (!result) return;
+    if (isAnswerKeyLocked) {
+      alert("Result report is locked to prevent leaking answers while the exam is still active. Please check back after the exam deadline.");
+      return;
+    }
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
     const w = window.open('', '_blank');
@@ -202,169 +272,195 @@ const ResultPage = () => {
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:'Segoe UI',sans-serif; padding:40px; }
-  .h { text-align:center; margin-bottom:32px; border-bottom:2px solid #667eea; padding-bottom:16px; }
-  .h h1 { color:#667eea; margin-bottom:8px; }
+  .h { text-align:center; margin-bottom:32px; border-bottom:2px solid #4f46e5; padding-bottom:16px; }
+  .h h1 { color:#4f46e5; margin-bottom:8px; }
   table { width:100%; border-collapse:collapse; margin-bottom:20px; }
   th,td { padding:12px 14px; text-align:left; border:1px solid #e0e0e0; font-size:14px; }
   th { background:#f8f9fa; font-weight:600; }
-  .score-banner { background:linear-gradient(135deg,#667eea,#764ba2); color:white; padding:24px; border-radius:12px; text-align:center; margin:24px 0; }
+  .score-banner { background:linear-gradient(135deg,#4f46e5,#6366f1); color:white; padding:24px; border-radius:12px; text-align:center; margin:24px 0; }
   .score-banner .score { font-size:48px; font-weight:700; margin-bottom:8px; }
   .f { text-align:center; margin-top:40px; color:#aaa; font-size:12px; border-top:1px solid #e0e0e0; padding-top:16px; }
 </style></head><body>
-  <div class="h"><h1>ExamPortal - Result Report</h1><p style="color:#666;">${dateStr}</p></div>
-  <table>
-    <tr><th>Student</th><td>${studentName}</td></tr>
-    <tr><th>Email</th><td>${studentEmail}</td></tr>
-    <tr><th>Exam</th><td>${result.exam_title}</td></tr>
-    <tr><th>Exam Code</th><td>${result.exam_code || 'N/A'}</td></tr>
-    <tr><th>Submitted At</th><td>${new Date(result.submitted_at).toLocaleString('en-IN')}</td></tr>
-    <tr><th>Time Taken</th><td>${result.time_taken ? Math.floor(result.time_taken / 60) + 'm ' + (result.time_taken % 60) + 's' : 'N/A'}</td></tr>
-    <tr><th>Score</th><td>${result.score} / ${result.total_questions} (${((result.score / result.total_questions) * 100).toFixed(1)}%)</td></tr>
-  </table>
-  <div class="score-banner">
-    <div class="score">${result.score} / ${result.total_questions}</div>
-    <div>${((result.score / result.total_questions) * 100).toFixed(1)}% Score</div>
-  </div>
-  <div class="f">ExamPortal - Secure Online Examination Platform</div>
-</body></html>`);
+<div class="h"><h1>Exam Result Report</h1><p>${studentEmail}</p></div>
+<div class="score-banner"><div class="score">${result.score ?? 0} / ${result.total_questions ?? 0}</div><div>${result.total_questions > 0 ? ((result.score / result.total_questions) * 100).toFixed(1) : 0}%</div></div>
+<table>
+<tr><th>#</th><th>Correct</th><th>Your Answer</th><th>Status</th></tr>`);
+    if (result.answers && Array.isArray(result.answers)) {
+      result.answers.forEach((a,i) => {
+        const st = a.student_answer;
+        const status = (!st || st === '' || st === 'null') ? 'Not Answered' : a.is_correct ? 'Correct' : 'Wrong';
+        w.document.write(`<tr><td>${i+1}</td><td>${a.correct_answer || '—'}</td><td>${st || '—'}</td><td>${status}</td></tr>`);
+      });
+    }
+    w.document.write('</table><div class="f">Generated on ' + dateStr + '</div></body></html>');
     w.document.close();
-    w.focus();
     setTimeout(() => w.print(), 500);
   };
 
-  // ─── Topbar helper ────────────────────────────────────────────────────────
-
-  const Topbar = ({ title }) => (
-    <div className="dashboard-topbar">
-      <h3>{title}</h3>
-      <div className="user-info">
-        <div>
-          <div style={{ fontWeight:600, fontSize:14, color:'#1a1a2e' }}>{studentName}</div>
-          <div style={{ fontSize:12, color:'#888' }}>{studentEmail}</div>
-        </div>
-        <div className="user-avatar" style={{ background:'linear-gradient(135deg,#667eea,#764ba2)' }}>{studentInitial}</div>
-      </div>
-    </div>
-  );
-
-  // ─── Loading ──────────────────────────────────────────────────────────────
-
-  if (loading) return (
-    <div style={{ display:'flex', minHeight:'100vh' }}>
-      <Sidebar active="results" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div style={{ display:'flex', justifyContent:'center', alignItems:'center', height:'100vh', flexDirection:'column', gap:16 }}>
-          <Spinner animation="border" style={{ width:60, height:60, color:'#667eea' }} />
-          <div style={{ fontSize:18, color:'#667eea', fontWeight:600 }}>Loading results...</div>
-        </div>
-      </div>
-    </div>
-  );
-
-  if (!result && !attemptId) return (
-    <div style={{ display:'flex', minHeight:'100vh' }}>
-      <Sidebar active="results" onLogout={handleLogout} />
-      <div className="dashboard-main" style={{ overflowY: 'auto', padding: 24 }}>
-        <Topbar title="My Results" />
-        
-        {allResults.length === 0 ? (
-          <div className="result-card" style={{ textAlign:'center', marginTop: 40, padding: 48 }}>
-            <div style={{ fontSize:64, marginBottom:16 }}>📊</div>
-            <h3>No Results Yet</h3>
-            <p style={{ color:'#888', marginBottom:24 }}>Complete an exam to view your results.</p>
-            <Button onClick={() => navigate('/exams')} style={{ borderRadius:10, fontWeight:600, padding:'12px 32px', background:'linear-gradient(135deg,#667eea,#764ba2)', border:'none' }}>Go to Exams</Button>
-          </div>
-        ) : (
-          <div className="result-card" style={{ marginTop: 24, padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '24px 32px', borderBottom: '1px solid #eee' }}>
-              <h4 style={{ margin: 0, color: '#2D0040', fontWeight: 700 }}>All Submissions ({allResults.length})</h4>
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead>
-                  <tr style={{ background: '#f8f9fa' }}>
-                    <th style={{ padding: '16px 32px', color: '#667eea', fontWeight: 600, borderBottom: '2px solid #eee' }}>Exam Title</th>
-                    <th style={{ padding: '16px 32px', color: '#667eea', fontWeight: 600, borderBottom: '2px solid #eee' }}>Score</th>
-                    <th style={{ padding: '16px 32px', color: '#667eea', fontWeight: 600, borderBottom: '2px solid #eee' }}>Percentage</th>
-                    <th style={{ padding: '16px 32px', color: '#667eea', fontWeight: 600, borderBottom: '2px solid #eee' }}>Time Taken</th>
-                    <th style={{ padding: '16px 32px', color: '#667eea', fontWeight: 600, borderBottom: '2px solid #eee' }}>Submitted Date</th>
-                    <th style={{ padding: '16px 32px', color: '#667eea', fontWeight: 600, borderBottom: '2px solid #eee', textAlign: 'center' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allResults.map((res, idx) => {
-                    const percentage = res.total_questions > 0 ? ((res.score / res.total_questions) * 100).toFixed(2) : 0;
-                    return (
-                      <tr key={idx} style={{ borderBottom: '1px solid #eee', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafafa'} onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
-                        <td style={{ padding: '16px 32px', fontWeight: 700, color: '#2D0040' }}>{res.exam_title || 'Untitled Exam'}</td>
-                        <td style={{ padding: '16px 32px', fontWeight: 600 }}>{res.score} / {res.total_questions}</td>
-                        <td style={{ padding: '16px 32px', fontWeight: 600, color: percentage >= 60 ? '#2e7d32' : '#c62828' }}>{percentage}%</td>
-                        <td style={{ padding: '16px 32px', color: '#555', fontWeight: 600 }}>{res.time_taken ? `${Math.floor(res.time_taken / 60)}m ${res.time_taken % 60}s` : 'N/A'}</td>
-                        <td style={{ padding: '16px 32px', color: '#888', fontSize: 14 }}>{new Date(res.submitted_at).toLocaleString('en-IN')}</td>
-                        <td style={{ padding: '16px 32px', textAlign: 'center' }}>
-                          <Button 
-                            size="sm" 
-                            onClick={() => navigate(`/result/${res.attempt_id || res.id}`)} 
-                            style={{ background: '#e8f5e9', color: '#2e7d32', border: 'none', fontWeight: 700, padding: '8px 20px', borderRadius: 20 }}
-                          >
-                            View Details
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  if (error) return (
-    <div style={{ display:'flex', minHeight:'100vh' }}>
-      <Sidebar active="results" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <Topbar title="Results" />
-        <Alert variant="danger" style={{ margin:20, borderRadius:10 }}>{error}</Alert>
-        <div style={{ textAlign:'center', padding:40 }}>
-          <Button onClick={() => navigate('/dashboard')} style={{ borderRadius:10, fontWeight:600, background:'linear-gradient(135deg,#667eea,#764ba2)', border:'none' }}>Back to Dashboard</Button>
-        </div>
-      </div>
-    </div>
-  );
-
-  // If we are supposed to show a specific result but it hasn't loaded yet, show loading
-  if (attemptId && !result) {
+  if (loading) {
     return (
       <div style={{ display:'flex', minHeight:'100vh' }}>
         <Sidebar active="results" onLogout={handleLogout} />
-        <div className="dashboard-main">
-          <div style={{ display:'flex', justifyContent:'center', alignItems:'center', height:'100vh', flexDirection:'column', gap:16 }}>
-            <Spinner animation="border" style={{ width:60, height:60, color:'#667eea' }} />
-            <div style={{ fontSize:18, color:'#667eea', fontWeight:600 }}>Loading result details...</div>
+        <main className="dashboard-main ep-page">
+          <div className="ep-loading-card">
+            <div className="spinner-border text-primary" role="status" />
+            <div>Loading results...</div>
           </div>
-        </div>
+        </main>
       </div>
     );
   }
 
-  // ─── Result data ──────────────────────────────────────────────────────────
+  // ─── Show ALL results list (no attemptId) ─────────────────────────────────
+  if (!attemptId) {
+    return (
+      <div style={{ display:'flex', minHeight:'100vh' }}>
+        <Sidebar active="results" onLogout={handleLogout} />
+        
+        <main className="dashboard-main ep-page">
+          <div className="ep-page-header">
+            <div>
+              <div className="ep-kicker">Student Workspace</div>
+              <h1>Results</h1>
+              <p>Monitor your performance, correct answers and historical reports.</p>
+            </div>
+            <div className="ep-user-chip">
+              <div className="avatar">{studentInitial}</div>
+              <div>
+                <strong>{studentName}</strong>
+                <span>{studentEmail}</span>
+              </div>
+            </div>
+          </div>
 
+          <div style={{ marginTop: 20 }}>
+            {error && <Alert variant="danger" className="ep-alert-box">{error}</Alert>}
+            
+            {allResults.length === 0 ? (
+              <div className="ep-empty">
+                <div style={{ fontSize: 64, marginBottom: 16 }}>📊</div>
+                <h4>No Results Yet</h4>
+                <p>Complete an exam to see your reports here.</p>
+                <button onClick={() => navigate('/dashboard')} className="ep-btn ep-btn-primary" style={{ marginTop: 12 }}>
+                  Back to Dashboard
+                </button>
+              </div>
+            ) : (
+              <div className="ep-card">
+                <div className="ep-card-head" style={{ padding: '18px 20px', borderBottom: '1px solid var(--ep-line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 15 }}>📊 All Exam Results</h3>
+                    <p style={{ margin: '2px 0 0', fontSize: 12.5 }}>Historical record of your submitted assessments ({finalAllResults.length})</p>
+                  </div>
+                  <ExportToolbar
+                    data={finalAllResults}
+                    prepareExportData={prepareStudentResultsForExport}
+                    filename={getExportFilename('student', 'results')}
+                    title="My Exam Results Report"
+                    dateField="submitted_at"
+                    showDateFilter={true}
+                    showSearchFilter={false}
+                    onFilterChange={(filters) => setExportFilters(filters)}
+                  />
+                </div>
+                <div className="table-wrap">
+                  <table className="ep-table">
+                    <thead>
+                      <tr>
+                        <th>Exam</th>
+                        <th>Score</th>
+                        <th>Percentage</th>
+                        <th>Time Taken</th>
+                        <th>Submitted</th>
+                        <th style={{ textAlign: 'center' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {finalAllResults.map((res, idx) => {
+                        const percentage = res.total_questions > 0 ? ((res.score / res.total_questions) * 100).toFixed(2) : 0;
+                        const passed = Number(percentage) >= 60;
+                        return (
+                          <tr key={idx} className="row-hover">
+                            <td className="cell-strong">{res.exam_title || 'Untitled Exam'}</td>
+                            <td className="cell-strong">{res.score} / {res.total_questions}</td>
+                            <td className="cell-strong" style={{ color: passed ? 'var(--ep-success)' : 'var(--ep-danger)' }}>{percentage}%</td>
+                            <td>{res.time_taken ? `${Math.floor(res.time_taken / 60)}m ${res.time_taken % 60}s` : 'N/A'}</td>
+                            <td>{new Date(res.submitted_at).toLocaleString('en-IN')}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button 
+                                onClick={() => navigate(`/result/${res.attempt_id || res.id}`)} 
+                                className="ep-btn ep-btn-outline"
+                                style={{ padding: '6px 14px', fontSize: 12 }}
+                              >
+                                View Details
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (error) return (
+    <div style={{ display:'flex', minHeight:'100vh' }}>
+      <Sidebar active="results" onLogout={handleLogout} />
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Student Workspace</div>
+            <h1>Error</h1>
+            <p>Something went wrong while retrieving result information.</p>
+          </div>
+        </div>
+        <Alert variant="danger" className="ep-alert-box">{error}</Alert>
+        <div style={{ textAlign:'center', marginTop:24 }}>
+          <button onClick={() => navigate('/dashboard')} className="ep-btn ep-btn-primary">
+            Back to Dashboard
+          </button>
+        </div>
+      </main>
+    </div>
+  );
+
+  if (attemptId && !result) {
+    return (
+      <div style={{ display:'flex', minHeight:'100vh' }}>
+        <Sidebar active="results" onLogout={handleLogout} />
+        <main className="dashboard-main ep-page">
+          <div className="ep-loading-card">
+            <div className="spinner-border text-primary" role="status" />
+            <div>Loading result details...</div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // ─── Single Result Details ───────────────────────────────────────────────
   const total = result?.total_questions ?? 0;
   
   let calculatedAttempted = 0;
   if (result?.answers && Array.isArray(result.answers)) {
-    calculatedAttempted = result.answers.filter(a => a.student_answer != null && a.student_answer !== '').length;
+    calculatedAttempted = result.answers.filter(a => {
+      const ans = a.student_answer;
+      return ans != null && ans !== '' && ans !== 'null' && ans !== 'undefined';
+    }).length;
   }
   
-  const attempted = result?.attempted ?? calculatedAttempted;
-  const unanswered = result?.unanswered ?? (total - attempted);
+  const attempted = calculatedAttempted > 0 ? calculatedAttempted : (result?.attempted ?? 0);
+  const unanswered = total - attempted;
   const completion = total > 0 ? Math.round((attempted / total) * 100) : 0;
   const score = result?.score ?? 0;
 
-  const submittedDate = new Date(result.submitted_at);
+  const submittedDate = result.submitted_at ? new Date(result.submitted_at) : new Date();
   const dateFormatted = submittedDate.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
   const timeFormatted = submittedDate.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12:true });
   
@@ -376,119 +472,165 @@ const ResultPage = () => {
   return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
       <Sidebar active="results" onLogout={handleLogout} />
-      <div className="dashboard-main" style={{ overflowY:'auto' }}>
-        <Topbar title="Exam Result" />
+      
+      <main className="dashboard-main ep-page" style={{ overflowY:'auto', flex: 1 }}>
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Assessment Report</div>
+            <h1>Exam Result</h1>
+            <p>Submission summary and analytical scorecard.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{studentInitial}</div>
+            <div>
+              <strong>{studentName}</strong>
+              <span>{studentEmail}</span>
+            </div>
+          </div>
+        </div>
 
         {/* ── Termination / Auto-submit banners ── */}
         {locationState.terminated && (
-          <div style={{ margin:'16px 24px 0', background:'#fff8e1', border:'2px solid #ffb300', borderRadius:10, padding:16, display:'flex', alignItems:'center', gap:12 }}>
+          <div style={{ margin:'16px 0', background:'var(--ep-danger-soft)', border:'1px solid #fee2e2', borderRadius:10, padding:16, display:'flex', alignItems:'center', gap:12 }}>
             <span style={{ fontSize:28 }}>⚠️</span>
             <div>
-              <strong style={{ color:'#f57f17' }}>Exam Terminated</strong>
-              <div style={{ fontSize:12, color:'#666', marginTop:4 }}>{locationState.terminationReason || 'Exam was terminated due to policy violation'}</div>
+              <strong style={{ color:'var(--ep-danger)', fontSize: 15 }}>Exam Terminated</strong>
+              <div style={{ fontSize:13, color:'var(--ep-ink-2)', marginTop:4 }}>{locationState.terminationReason || 'Exam was terminated due to policy violation'}</div>
             </div>
           </div>
         )}
         {locationState.autoSubmitted && (
-          <div style={{ margin:'16px 24px 0', background:'#e3f2fd', border:'2px solid #1976d2', borderRadius:10, padding:16, display:'flex', alignItems:'center', gap:12 }}>
+          <div style={{ margin:'16px 0', background:'var(--ep-info-soft)', border:'1px solid #bae6fd', borderRadius:10, padding:16, display:'flex', alignItems:'center', gap:12 }}>
             <span style={{ fontSize:28 }}>⏱️</span>
             <div>
-              <strong style={{ color:'#1565c0' }}>Auto-Submitted</strong>
-              <div style={{ fontSize:12, color:'#666', marginTop:4 }}>{locationState.reason || 'Exam was automatically submitted when time expired'}</div>
+              <strong style={{ color:'var(--ep-info)', fontSize: 15 }}>Auto-Submitted</strong>
+              <div style={{ fontSize:13, color:'var(--ep-ink-2)', marginTop:4 }}>{locationState.reason || 'Exam was automatically submitted when time expired'}</div>
             </div>
           </div>
         )}
 
-        {/* ── Main Card ── */}
-        <div className="result-card" style={{ maxWidth:620, margin:'32px auto' }}>
+        {/* ── Main Scorecard ── */}
+        <div className="result-card ep-card" style={{ maxWidth: 720, margin:'24px auto', padding: 32 }}>
 
           {/* Success Icon */}
-          <div style={{ textAlign:'center', marginBottom:12 }}>
+          <div style={{ textAlign:'center', marginBottom: 24 }}>
             <div style={{
-              width:64, height:64, borderRadius:'50%',
-              border:'3px solid #4caf50',
+              width: 58, height: 58, borderRadius:'50%',
+              background: 'var(--ep-success-soft)',
               display:'inline-flex', alignItems:'center', justifyContent:'center',
-              marginBottom:12
+              marginBottom: 12
             }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#4caf50" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--ep-success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
-            <h4 style={{ fontWeight:700, color:'#1a1a2e', marginBottom:4 }}>Exam Submitted Successfully!</h4>
+            <h3 style={{ fontWeight: 800, color:'var(--ep-ink)', marginBottom: 4 }}>Exam Completed Successfully!</h3>
+            <p style={{ color: 'var(--ep-muted)', fontSize: 13.5 }}>Your answers have been securely logged and analyzed.</p>
           </div>
 
-          {/* Stats Pills */}
-          <div style={{ display:'flex', gap:8, justifyContent:'center', marginBottom:12, flexWrap:'wrap' }}>
-            <div style={{ padding:'6px 18px', background:'#f3e5f5', borderRadius:20, fontSize:13, fontWeight:700, color:'#5B0A7B' }}>
-              <strong>{total}</strong> <span style={{ fontWeight:400 }}>TOTAL</span>
-            </div>
-            <div style={{ padding:'6px 18px', background:'#e8f5e9', borderRadius:20, fontSize:13, fontWeight:700, color:'#2e7d32' }}>
-              <strong>{attempted}</strong> <span style={{ fontWeight:400 }}>ATTEMPTED</span>
-            </div>
-            <div style={{ padding:'6px 18px', background:'#fce4ec', borderRadius:20, fontSize:13, fontWeight:700, color:'#c62828' }}>
-              <strong>{unanswered}</strong> <span style={{ fontWeight:400 }}>UNANSWERED</span>
-            </div>
-          </div>
-
-          {/* Completion bar */}
-          <div style={{ 
-            padding:'10px 18px',
-            background:'#f3e5f5',
-            borderRadius:10,
-            fontSize:13,
-            fontWeight:700,
-            color:'#5B0A7B',
-            marginBottom:24,
-            textAlign:'center'
+          {/* Score Circle / Hero */}
+          <div style={{
+            textAlign: 'center',
+            background: 'linear-gradient(135deg, var(--ep-brand-soft), #fff)',
+            padding: '24px',
+            borderRadius: 14,
+            marginBottom: 24,
+            border: '1px solid var(--ep-line)'
           }}>
-            {completion}% <span style={{ fontWeight:400 }}>COMPLETION</span>
+            <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, color: 'var(--ep-muted)' }}>Analytical Score</div>
+            <div style={{ fontSize: 42, fontWeight: 800, color: 'var(--ep-brand)', margin: '4px 0' }}>
+              {score} / {total}
+            </div>
+            <span className="ep-badge ep-badge-info" style={{ fontWeight: 700, fontSize: 12 }}>
+              {total > 0 ? ((score / total) * 100).toFixed(1) : 0}% Correct Rate
+            </span>
           </div>
 
-          {/* Info table */}
-          <div style={{ background:'#f8f9fa', borderRadius:10, padding:'4px 16px', marginBottom:20 }}>
+          {/* Stats Pills Grid using beautiful .result-summary */}
+          <div className="result-summary" style={{ marginBottom: 24 }}>
+            <div className="rs-item">
+              <div className="lbl">Total Questions</div>
+              <div className="val">{total}</div>
+            </div>
+            <div className="rs-item">
+              <div className="lbl" style={{ color: 'var(--ep-success)' }}>Correct Answers</div>
+              <div className="val" style={{ color: 'var(--ep-success)' }}>{score}</div>
+            </div>
+            <div className="rs-item">
+              <div className="lbl" style={{ color: 'var(--ep-warning)' }}>Attempted</div>
+              <div className="val" style={{ color: 'var(--ep-warning)' }}>{attempted}</div>
+            </div>
+            <div className="rs-item">
+              <div className="lbl" style={{ color: 'var(--ep-danger)' }}>Skipped Qs</div>
+              <div className="val" style={{ color: 'var(--ep-danger)' }}>{unanswered}</div>
+            </div>
+          </div>
+
+          {/* Info list */}
+          <div style={{ background:'var(--ep-surface-2)', borderRadius:10, padding:'8px 18px', marginBottom: 24, border: '1px solid var(--ep-line)' }}>
             {[
-              { label:'Email', value: studentEmail },
-              { label:'Exam', value: result.exam_title },
-              { label:'Code', value: result.exam_code || 'N/A' },
-              { label:'Submitted', value: `${dateFormatted} at ${timeFormatted}` },
-              { label:'Time Taken', value: timeTakenFormatted },
+              { label:'Candidate', value: studentName },
+              { label:'Email Address', value: studentEmail },
+              { label:'Exam Paper', value: result.exam_title },
+              { label:'Exam Code', value: result.exam_code || 'N/A' },
+              { label:'Submitted On', value: `${dateFormatted} at ${timeFormatted}` },
+              { label:'Duration Used', value: timeTakenFormatted },
             ].map(({ label, value }) => (
-              <div key={label} style={{ display:'flex', gap:12, padding:'10px 0', borderBottom:'1px solid #e0e0e0' }}>
-                <span style={{ minWidth:90, fontWeight:600, color:'#667eea', fontSize:13 }}>{label}</span>
-                <span style={{ color:'#333', fontSize:13 }}>{value}</span>
+              <div key={label} style={{ display:'flex', justifyContent: 'space-between', padding:'10px 0', borderBottom:'1px solid var(--ep-line)' }}>
+                <span style={{ fontWeight: 600, color:'var(--ep-muted)', fontSize:13 }}>{label}</span>
+                <span style={{ color:'var(--ep-ink-2)', fontSize:13, fontWeight: 700 }}>{value}</span>
               </div>
             ))}
           </div>
-          {/* Note */}
-          <p style={{ textAlign:'center', fontSize:13, color:'#888', marginBottom:24 }}>
-            Detailed answer breakdown is available in the downloaded report.
-          </p>
 
-          {/* Action Buttons */}
-          <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center' }}>
-            <Button
-              onClick={() => navigate('/dashboard')}
-              style={{ background:'linear-gradient(135deg,#667eea,#764ba2)', border:'none', borderRadius:10, padding:'10px 22px', fontWeight:600, fontSize:14 }}
-            >
-              Back to Dashboard
-            </Button>
-            <Button
-              variant="outline-success"
-              onClick={downloadAnswerKey}
-              style={{ borderRadius:10, padding:'10px 22px', fontWeight:600, fontSize:14 }}
-            >
-              Download Answer Key
-            </Button>
-            <Button
-              variant="outline-secondary"
-              onClick={printReport}
-              style={{ borderRadius:10, padding:'10px 22px', fontWeight:600, fontSize:14 }}
-            >
-              Print Report
-            </Button>
-          </div>
+          {/* Action Buttons / Locked Notice */}
+          {isAnswerKeyLocked ? (
+            <div style={{ textAlign: 'center', background: 'var(--ep-warning-soft)', border: '1px solid #fde68a', borderRadius: 12, padding: 24 }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🔒</div>
+              <h5 style={{ fontWeight: 800, color: 'var(--ep-warning)', margin: '0 0 6px' }}>Detailed Answer Key Locked</h5>
+              <p style={{ color: 'var(--ep-ink-2)', fontSize: 13, margin: '0 0 16px', lineHeight: 1.5 }}>
+                To maintain academic fairness, details are locked while the exam is still ongoing. The answers will unlock automatically once the exam deadline passes.
+              </p>
+              <div className="ep-badge ep-badge-warning" style={{ marginBottom: 20 }}>
+                ⏳ Releases after: {new Date(examDeadline).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </div>
+              <div>
+                <button
+                  onClick={() => navigate('/dashboard')}
+                  className="ep-btn ep-btn-primary"
+                  style={{ padding: '10px 24px' }}
+                >
+                  Back to Dashboard
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display:'flex', gap: 10, flexWrap:'wrap', justifyContent:'center' }}>
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="ep-btn ep-btn-primary"
+                style={{ padding: '10px 20px' }}
+              >
+                Back to Dashboard
+              </button>
+              <button
+                onClick={downloadAnswerKey}
+                className="ep-btn ep-btn-outline"
+                style={{ padding: '10px 20px', color: 'var(--ep-success)', borderColor: 'var(--ep-success-soft)' }}
+              >
+                Download Answer Key
+              </button>
+              <button
+                onClick={printReport}
+                className="ep-btn ep-btn-outline"
+                style={{ padding: '10px 20px' }}
+              >
+                Print Report
+              </button>
+            </div>
+          )}
         </div>
-      </div>
+      </main>
     </div>
   );
 };

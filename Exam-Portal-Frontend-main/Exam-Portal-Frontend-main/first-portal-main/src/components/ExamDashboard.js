@@ -79,24 +79,38 @@ const ExamDashboard = () => {
   const [missingFaceCount, setMissingFaceCount] = useState(0);
   const [audioViolationCount, setAudioViolationCount] = useState(0);
   const [multipleFaceCount, setMultipleFaceCount] = useState(0);
+  const [illegalObjectCount, setIllegalObjectCount] = useState(0);
+  const [facePresenceCount, setFacePresenceCount] = useState(0);
+  const [objectDetectionCount, setObjectDetectionCount] = useState(0);
   const [warningType, setWarningType] = useState('Tab Switch');
-  const MAX_MOBILE_WARNINGS = 3;
-  const MAX_MISSING_FACE_WARNINGS = 3;
-  const MAX_AUDIO_WARNINGS = 3;
-  const MAX_MULTIPLE_FACE_WARNINGS = 3;
-  const MAX_TAB_SWITCHES = 3;
+
+  // Final proctoring limits:
+  // Tab switch = 4 separate.
+  // No face + multiple person = 5 combined.
+  // Mobile phone + illegal item = 5 combined.
+  // Audio violation = 5 separate.
+  const MAX_TAB_SWITCHES = 4;
+  const MAX_FACE_PRESENCE_WARNINGS = 5;
+  const MAX_OBJECT_DETECTION_WARNINGS = 5;
+  const MAX_AUDIO_WARNINGS = 5;
 
   const violationCountsRef = useRef({
     'Mobile Phone Detection': 0,
     'No Face Detected': 0,
     'Audio Violation': 0,
     'Multiple Person Detection': 0,
+    'Illegal Item Detection': 0,
+    'Face Presence Group': 0,
+    'Object Detection Group': 0,
     'Tab Switch': 0,
   });
   const lastViolationTimesRef = useRef({});
   const violationsListRef = useRef([]);
+  const reportingViolationIdsRef = useRef(new Set());
 
 
+
+  const [serverTimeRemaining, setServerTimeRemaining] = useState(null);
 
   // ✅ FIXED: Fetch exam data correctly
   useEffect(() => {
@@ -114,9 +128,17 @@ const ExamDashboard = () => {
     const examData = await apiService.getExamQuestions(examId);
     
     if (!examData || !examData.exam) {
-      setError('Exam not found');
-      setLoading(false);
-      return;
+      throw new Error('Invalid exam data received');
+    }
+
+    // NEW: Fetch Server Time to prevent infinite timer cheat
+    try {
+      const timerData = await apiService.checkTimer(examId);
+      if (timerData && timerData.remaining_seconds !== undefined) {
+        setServerTimeRemaining(timerData.remaining_seconds);
+      }
+    } catch (timerErr) {
+      console.warn("Failed to fetch server timer, falling back to full duration.");
     }
 
     console.log('✅ Got exam:', examData.exam);
@@ -234,6 +256,25 @@ const ExamDashboard = () => {
     }
   }, []);
 
+  const reportViolationImmediately = useCallback(async (violation) => {
+    if (!examId || !violation) return;
+    const key = violation.client_id || `${violation.type}-${violation.timestamp || Date.now()}`;
+    if (reportingViolationIdsRef.current.has(key)) return;
+    reportingViolationIdsRef.current.add(key);
+    try {
+      await apiService.reportViolation(examId, violation);
+      violation.persisted = true;
+    } catch (err) {
+      // Keep it in memory; submitExam will send it again at final submission.
+      reportingViolationIdsRef.current.delete(key);
+      console.warn('Immediate violation report failed:', err?.message || err);
+    }
+  }, [examId]);
+
+  const getPendingViolationsForSubmit = useCallback(() => (
+    violationsListRef.current.filter((v) => !v.persisted)
+  ), []);
+
   const handleForceSubmit = useCallback(async (reasonStr) => {
     if (submitted || submitting) return;
     setExamTerminated(true);
@@ -242,7 +283,7 @@ const ExamDashboard = () => {
       const timeTaken = examStartTimeRef.current ? Math.min(exam.duration * 60, Math.floor((Date.now() - examStartTimeRef.current) / 1000)) : 0;
       
       // Inject termination reason as a final violation log
-      const finalViolations = [...violationsListRef.current];
+      const finalViolations = getPendingViolationsForSubmit();
       if (reasonStr) {
         finalViolations.push({
           type: 'Exam Terminated',
@@ -262,17 +303,21 @@ const ExamDashboard = () => {
       setSubmitting(false);
       setExamTerminated(false);
     }
-  }, [examId, exam, answers, submitted, submitting, navigate, buildFormattedAnswers]);
+  }, [examId, exam, answers, submitted, submitting, navigate, buildFormattedAnswers, getPendingViolationsForSubmit]);
 
   const handleViolation = useCallback((violation) => {
     const now = Date.now();
     const lastTime = lastViolationTimesRef.current[violation.type] || 0;
     
-    // 5000ms debounce per violation type
-    if (now - lastTime < 5000) return;
+    // 15-second debounce per violation type (prevents rapid-fire false warnings)
+    if (now - lastTime < 15000) return;
     
     lastViolationTimesRef.current[violation.type] = now;
-    const newViolation = { ...violation, timestamp: now };
+    const newViolation = {
+      ...violation,
+      timestamp: now,
+      client_id: violation.client_id || `${examId || 'exam'}-${now}-${Math.random().toString(36).slice(2)}`,
+    };
     
     // Update ref for synchronous access during force submits
     violationsListRef.current = [...violationsListRef.current, newViolation];
@@ -280,40 +325,71 @@ const ExamDashboard = () => {
     // Update state for UI
     setViolations(violationsListRef.current);
 
+    // Send snapshot to backend immediately so it appears in Detected Students
+    // even while the exam is still in progress.
+    reportViolationImmediately(newViolation);
+
     let maxLimit = 0;
     let currentCount = 0;
+    let groupLabel = '';
 
     if (violation.type === 'Mobile Phone Detection') {
       violationCountsRef.current['Mobile Phone Detection'] += 1;
-      currentCount = violationCountsRef.current['Mobile Phone Detection'];
-      setMobileDetectCount(currentCount);
-      maxLimit = MAX_MOBILE_WARNINGS;
+      setMobileDetectCount(violationCountsRef.current['Mobile Phone Detection']);
+      violationCountsRef.current['Object Detection Group'] += 1;
+      currentCount = violationCountsRef.current['Object Detection Group'];
+      setObjectDetectionCount(currentCount);
+      maxLimit = MAX_OBJECT_DETECTION_WARNINGS;
+      groupLabel = 'Mobile phone / illegal item combined';
+    } else if (violation.type === 'Illegal Item Detection') {
+      violationCountsRef.current['Illegal Item Detection'] += 1;
+      setIllegalObjectCount(violationCountsRef.current['Illegal Item Detection']);
+      violationCountsRef.current['Object Detection Group'] += 1;
+      currentCount = violationCountsRef.current['Object Detection Group'];
+      setObjectDetectionCount(currentCount);
+      maxLimit = MAX_OBJECT_DETECTION_WARNINGS;
+      groupLabel = 'Mobile phone / illegal item combined';
     } else if (violation.type === 'No Face Detected') {
       violationCountsRef.current['No Face Detected'] += 1;
-      currentCount = violationCountsRef.current['No Face Detected'];
-      setMissingFaceCount(currentCount);
-      maxLimit = MAX_MISSING_FACE_WARNINGS;
+      setMissingFaceCount(violationCountsRef.current['No Face Detected']);
+      violationCountsRef.current['Face Presence Group'] += 1;
+      currentCount = violationCountsRef.current['Face Presence Group'];
+      setFacePresenceCount(currentCount);
+      maxLimit = MAX_FACE_PRESENCE_WARNINGS;
+      groupLabel = 'No face / multiple person combined';
+    } else if (violation.type === 'Multiple Person Detection') {
+      violationCountsRef.current['Multiple Person Detection'] += 1;
+      setMultipleFaceCount(violationCountsRef.current['Multiple Person Detection']);
+      violationCountsRef.current['Face Presence Group'] += 1;
+      currentCount = violationCountsRef.current['Face Presence Group'];
+      setFacePresenceCount(currentCount);
+      maxLimit = MAX_FACE_PRESENCE_WARNINGS;
+      groupLabel = 'No face / multiple person combined';
     } else if (violation.type === 'Audio Violation') {
       violationCountsRef.current['Audio Violation'] += 1;
       currentCount = violationCountsRef.current['Audio Violation'];
       setAudioViolationCount(currentCount);
       maxLimit = MAX_AUDIO_WARNINGS;
-    } else if (violation.type === 'Multiple Person Detection') {
-      violationCountsRef.current['Multiple Person Detection'] += 1;
-      currentCount = violationCountsRef.current['Multiple Person Detection'];
-      setMultipleFaceCount(currentCount);
-      maxLimit = MAX_MULTIPLE_FACE_WARNINGS;
+      groupLabel = 'Audio';
     }
 
     if (maxLimit > 0) {
       if (currentCount >= maxLimit) {
-        setWarningMessage(`${violation.message}\nLimit reached (${maxLimit} times).\nYour exam is now being auto-submitted.`);
+        setWarningMessage(`${violation.message}
+
+${groupLabel} limit reached (${currentCount}/${maxLimit}).
+Your exam is now being auto-submitted.`);
         setWarningType(violation.type);
         setShowWarningModal(true);
-        setTimeout(() => { setShowWarningModal(false); handleForceSubmit(`${violation.type} Limit Exceeded`); }, 3000);
+        setTimeout(() => { setShowWarningModal(false); handleForceSubmit(`${groupLabel || violation.type} Limit Exceeded`); }, 3000);
       } else {
         const remaining = maxLimit - currentCount;
-        setWarningMessage(`AI Proctoring Warning:\n\n${violation.message}\n\n${remaining} warning${remaining === 1 ? '' : 's'} remaining before auto-submission.`);
+        setWarningMessage(`AI Proctoring Warning:
+
+${violation.message}
+
+${groupLabel}: ${currentCount}/${maxLimit}.
+${remaining} warning${remaining === 1 ? '' : 's'} remaining before auto-submission.`);
         setWarningType(violation.type);
         setShowWarningModal(true);
       }
@@ -322,14 +398,14 @@ const ExamDashboard = () => {
       setWarningType(violation.type);
       setShowWarningModal(true);
     }
-  }, [handleForceSubmit]);
+  }, [examId, handleForceSubmit, reportViolationImmediately]);
 
   const handleAutoSubmit = useCallback(async () => {
     if (submitted || submitting) return;
     setSubmitting(true);
     try {
       const timeTaken = exam.duration * 60; // Max time taken
-      const result = await apiService.submitExam(examId, buildFormattedAnswers(exam, answers), timeTaken, violationsListRef.current);
+      const result = await apiService.submitExam(examId, buildFormattedAnswers(exam, answers), timeTaken, getPendingViolationsForSubmit());
       const attemptId = result?.attempt_id || result?.data?.attempt_id;
       navigate(`/result/${attemptId}`, {
         state: { autoSubmitted: true, reason: 'Time expired' },
@@ -338,7 +414,7 @@ const ExamDashboard = () => {
       setError(err.message || 'Failed to submit exam');
       setSubmitting(false);
     }
-  }, [examId, exam, answers, submitted, submitting, navigate, buildFormattedAnswers]);
+  }, [examId, exam, answers, submitted, submitting, navigate, buildFormattedAnswers, getPendingViolationsForSubmit]);
 
   const lastSwitchTimeRef = useRef(0);
   const examStartTimeRef = useRef(0);
@@ -432,7 +508,7 @@ const ExamDashboard = () => {
 
   // Pre-exam Environment Check
   if (!preCheckPassed) {
-    return <PreExamCheck onComplete={() => setPreCheckPassed(true)} examTitle={exam?.title || 'Exam'} />;
+    return <PreExamCheck onComplete={() => setPreCheckPassed(true)} examTitle={exam?.title || 'Exam'} exam={exam} totalQ={totalQ} />;
   }
 
   if (!exam) {
@@ -451,7 +527,7 @@ const ExamDashboard = () => {
     try {
       const timeTaken = examStartTimeRef.current ? Math.min(exam.duration * 60, Math.floor((Date.now() - examStartTimeRef.current) / 1000)) : 0;
       // Append violations to answers payload so it's saved in the attempt
-      const result = await apiService.submitExam(examId, buildFormattedAnswers(exam, answers), timeTaken, violationsListRef.current);
+      const result = await apiService.submitExam(examId, buildFormattedAnswers(exam, answers), timeTaken, getPendingViolationsForSubmit());
       setSubmitted(true);
       const attemptId = result?.attempt_id || result?.data?.attempt_id;
       if (!attemptId) {
@@ -482,7 +558,10 @@ const ExamDashboard = () => {
         <div className="timer-box">
           <div className="timer-label">TIME REMAINING</div>
           {(!submitted && !examTerminated && exam && !loading) ? (
-            <TimerDisplay initialTimeLeft={exam.duration * 60} onTimeUp={handleAutoSubmit} />
+            <TimerDisplay 
+              initialTimeLeft={serverTimeRemaining !== null ? serverTimeRemaining : exam.duration * 60} 
+              onTimeUp={handleAutoSubmit} 
+            />
           ) : (
             <div className="timer-value">{formatTime(exam?.duration ? exam.duration * 60 : 0)}</div>
           )}
@@ -601,9 +680,10 @@ const ExamDashboard = () => {
     
     // Only modify paths if it's not a blob or data URI
     if (!pdfSrc.startsWith('blob:') && !pdfSrc.startsWith('http://') && !pdfSrc.startsWith('https://') && !pdfSrc.startsWith('data:')) {
-      // Relative path — ensure it starts with /
+      // Relative path — prepend BACKEND URL (not frontend URL)
       if (!pdfSrc.startsWith('/')) pdfSrc = '/' + pdfSrc;
-      pdfSrc = `${window.location.origin}${pdfSrc}`;
+      const apiBaseUrl = process.env.REACT_APP_API_URL || 'https://exam-backend-eg8c.onrender.com';
+      pdfSrc = `${apiBaseUrl}${pdfSrc}`;
     }
 
     return (
@@ -654,17 +734,15 @@ const ExamDashboard = () => {
           setShowWarningModal={setShowWarningModal} 
           activeCount={
             warningType === 'Tab Switch' ? tabSwitchCount : 
-            warningType === 'Mobile Phone Detection' ? mobileDetectCount : 
-            warningType === 'No Face Detected' ? missingFaceCount : 
-            warningType === 'Audio Violation' ? audioViolationCount : 
-            warningType === 'Multiple Person Detection' ? multipleFaceCount : 0
+            warningType === 'Mobile Phone Detection' || warningType === 'Illegal Item Detection' ? objectDetectionCount :
+            warningType === 'No Face Detected' || warningType === 'Multiple Person Detection' ? facePresenceCount :
+            warningType === 'Audio Violation' ? audioViolationCount : 0
           } 
           maxCount={
             warningType === 'Tab Switch' ? MAX_TAB_SWITCHES : 
-            warningType === 'Mobile Phone Detection' ? MAX_MOBILE_WARNINGS : 
-            warningType === 'No Face Detected' ? MAX_MISSING_FACE_WARNINGS : 
-            warningType === 'Audio Violation' ? MAX_AUDIO_WARNINGS : 
-            warningType === 'Multiple Person Detection' ? MAX_MULTIPLE_FACE_WARNINGS : 0
+            warningType === 'Mobile Phone Detection' || warningType === 'Illegal Item Detection' ? MAX_OBJECT_DETECTION_WARNINGS :
+            warningType === 'No Face Detected' || warningType === 'Multiple Person Detection' ? MAX_FACE_PRESENCE_WARNINGS :
+            warningType === 'Audio Violation' ? MAX_AUDIO_WARNINGS : 0
           } 
           warningMessage={warningMessage} 
           warningType={warningType}
@@ -783,17 +861,15 @@ const ExamDashboard = () => {
         setShowWarningModal={setShowWarningModal} 
         activeCount={
           warningType === 'Tab Switch' ? tabSwitchCount : 
-          warningType === 'Mobile Phone Detection' ? mobileDetectCount : 
-          warningType === 'No Face Detected' ? missingFaceCount : 
-          warningType === 'Audio Violation' ? audioViolationCount : 
-          warningType === 'Multiple Person Detection' ? multipleFaceCount : 0
+          warningType === 'Mobile Phone Detection' || warningType === 'Illegal Item Detection' ? objectDetectionCount :
+          warningType === 'No Face Detected' || warningType === 'Multiple Person Detection' ? facePresenceCount :
+          warningType === 'Audio Violation' ? audioViolationCount : 0
         } 
         maxCount={
           warningType === 'Tab Switch' ? MAX_TAB_SWITCHES : 
-          warningType === 'Mobile Phone Detection' ? MAX_MOBILE_WARNINGS : 
-          warningType === 'No Face Detected' ? MAX_MISSING_FACE_WARNINGS : 
-          warningType === 'Audio Violation' ? MAX_AUDIO_WARNINGS : 
-          warningType === 'Multiple Person Detection' ? MAX_MULTIPLE_FACE_WARNINGS : 0
+          warningType === 'Mobile Phone Detection' || warningType === 'Illegal Item Detection' ? MAX_OBJECT_DETECTION_WARNINGS :
+          warningType === 'No Face Detected' || warningType === 'Multiple Person Detection' ? MAX_FACE_PRESENCE_WARNINGS :
+          warningType === 'Audio Violation' ? MAX_AUDIO_WARNINGS : 0
         } 
         warningMessage={warningMessage} 
         warningType={warningType}

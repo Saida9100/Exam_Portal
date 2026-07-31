@@ -1,239 +1,558 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Button, Spinner, Alert } from 'react-bootstrap';
+// src/components/proctoring/PreExamCheck.js
+import React, { useState, useEffect, useRef } from 'react'; 
+import { cleanExamDescription } from '../../utils/exportUtils';
 
-const faceapi = window.faceapi;
+const FACE_MODEL_URL_PRIMARY =
+  'https://justadudewhohacks.github.io/face-api.js/models';
+const FACE_MODEL_URL_FALLBACK =
+  'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/models';
 
-const PreExamCheck = ({ onComplete, examTitle }) => {
+const StatusBadge = ({ status, text }) => {
+  const cfg = {
+    good: { bg: '#e8f5e9', color: '#2e7d32', icon: '✓' },
+    warn: { bg: '#fff3e0', color: '#f57f17', icon: '!' },
+    bad: { bg: '#ffebee', color: '#c62828', icon: '✕' },
+    pending: { bg: '#e3f2fd', color: '#1565c0', icon: '…' },
+    check: { bg: '#ede7f6', color: '#5B0A7B', icon: '↻' },
+  };
+  const s = cfg[status] || cfg.pending;
+  return (
+    <span style={{
+      background: s.bg, color: s.color,
+      padding: '4px 10px', borderRadius: 999,
+      fontSize: 12, fontWeight: 700,
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+    }}>
+      <span>{s.icon}</span>
+      <span>{text}</span>
+    </span>
+  );
+};
+
+const PreExamCheck = ({ onComplete, examTitle, exam, totalQ }) => {
   const videoRef = useRef(null);
-  const [status, setStatus] = useState('requesting'); // requesting, loading_models, checking, ready, error
+  const animFrameRef = useRef(null);
+  const analyserRef = useRef(null);
+  const scanTimerRef = useRef(null);
+  const streamRef = useRef(null);
+  const audioStreamRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const nativeFaceDetectorRef = useRef(null);
+  const faceApiLoadedRef = useRef(false);
+
+  const [camRes, setCamRes] = useState('');
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [audioReady, setAudioReady] = useState(false);
+  const [brightness, setBrightness] = useState(0);
+  const [faceConf, setFaceConf] = useState(0);
+
+  const [camStatus, setCamStatus] = useState('pending');
+  const [micStatus, setMicStatus] = useState('pending');
+  const [lightStatus, setLightStatus] = useState('pending');
+  const [faceStatus, setFaceStatus] = useState('pending');
+
   const [errorMsg, setErrorMsg] = useState('');
-  const [checks, setChecks] = useState({
-    camera: false,
-    mic: false,
-    face: false,
-    lighting: false
-  });
+  const [allReady, setAllReady] = useState(false);
+  const [showOverride, setShowOverride] = useState(false);
+  const [agreedRules, setAgreedRules] = useState(false);
+  const [manualOverride, setManualOverride] = useState(false);
 
+  // 1. Initialise Camera & Mic
   useEffect(() => {
-    let stream = null;
+    let active = true;
 
-    const init = async () => {
+    const startMedia = async () => {
       try {
-        // 1. Request Permissions
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        setCamStatus('check');
+        setMicStatus('check');
+        setLightStatus('check');
+        setFaceStatus('check');
+
+        // Request CAMERA first and alone. If microphone permission fails,
+        // the camera preview must still work for the pre-exam face check.
+        const cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+          audio: false,
+        });
+
+        if (!active) { cameraStream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = cameraStream;
+
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+          videoRef.current.srcObject = cameraStream;
+          await new Promise((resolve) => {
+            const v = videoRef.current;
+            if (!v || v.readyState >= 2) return resolve();
+            v.addEventListener('loadeddata', resolve, { once: true });
+            setTimeout(resolve, 5000);
+          });
+          try { await videoRef.current.play(); }
+          catch (e) { console.warn('Video play() rejected:', e?.message); }
         }
-        setChecks(c => ({ ...c, camera: true, mic: true }));
-        setStatus('loading_models');
 
-        // 2. Load Models
-        // Start loading both models in the background without awaiting them!
-        // This prevents students on slow internet from being stuck on the check screen for 1 minute.
-        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
-        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL).catch(e => console.warn('Background FaceAPI load error:', e));
-        
-        if (window.cocoSsd) {
-          window.cocoSsd.load().then(async (model) => {
-            // Warm up COCO-SSD to compile WebGL shaders
-            if (videoRef.current && videoRef.current.readyState >= 2) {
-              await model.detect(videoRef.current, 1, 0.5).catch(() => {});
-            }
-          }).catch(e => console.warn('Background COCO-SSD load error:', e));
+        try {
+          const vt = cameraStream.getVideoTracks()[0];
+          if (vt) {
+            const s = vt.getSettings();
+            setCamRes(`${s.width || 640}x${s.height || 480}`);
+          }
+        } catch (e) { setCamRes('640x480'); }
+        setCamStatus('good');
+
+        // Microphone is useful for audio violation monitoring but should not
+        // block the camera/face check. Request it separately.
+        try {
+          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          if (!active) { micStream.getTracks().forEach((t) => t.stop()); return; }
+          audioStreamRef.current = micStream;
+
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            try {
+              const ctx = new AudioCtx();
+              const an = ctx.createAnalyser();
+              const src = ctx.createMediaStreamSource(micStream);
+              src.connect(an);
+              an.fftSize = 256;
+              audioCtxRef.current = ctx;
+              analyserRef.current = an;
+              setAudioReady(true);
+            } catch (e) { console.warn('Audio analyser init failed:', e); }
+          }
+          setMicStatus('good');
+        } catch (micErr) {
+          console.warn('Microphone permission unavailable; continuing with camera proctoring:', micErr?.message || micErr);
+          setMicStatus('warn');
         }
-        
-        // Immediately start checking (the 5-second auto-pass will bypass it if models aren't ready yet)
-        setStatus('checking');
 
+        // Face visibility is mandatory, so there is no skip button.
+        setShowOverride(false);
       } catch (err) {
-        console.error('PreExamCheck init error:', err);
-        setStatus('error');
-        if (err.name === 'NotAllowedError' || err.name === 'NotFoundError') {
-          setErrorMsg('Camera and Microphone permissions are required to take this exam.');
-        } else {
-          setErrorMsg('Failed to initialize hardware. ' + err.message);
-        }
+        console.error('Media start error:', err);
+        setErrorMsg('Camera or Microphone access denied. Please allow permissions in your browser settings and refresh the page.');
+        setCamStatus('bad');
+        setMicStatus('bad');
       }
     };
 
-    init();
+    startMedia();
 
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+      active = false;
+      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+      if (audioStreamRef.current) audioStreamRef.current.getTracks().forEach((t) => t.stop());
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        try { audioCtxRef.current.close(); } catch (e) { /* ignore */ }
       }
     };
   }, []);
 
+  // 2. Continuous Audio Meter
   useEffect(() => {
-    if (status !== 'checking') return;
-
-    let checkTimeout;
-    let isChecking = true;
-    let checkStartTime = Date.now();
-    
-    const runCheck = async () => {
-      if (!isChecking || !videoRef.current || videoRef.current.paused) return;
-
+    if (!audioReady || !analyserRef.current) return undefined;
+    const analyser = analyserRef.current;
+    let running = true;
+    const tick = () => {
+      if (!running) return;
       try {
-        const now = Date.now();
-        // Warm up with inputSize 416 so the shaders are perfectly ready for ProctorEngine
-        const detections = await faceapi.detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.1 }));
-        
-        let faceFound = detections.length >= 1;
-        let isGoodLighting = true; // Default to true to speed things up
+        const buf = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i];
+        setAudioLevel(sum / buf.length);
+      } catch (e) { /* ignore */ }
+      animFrameRef.current = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => {
+      running = false;
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, [audioReady]);
 
-        // Force pass after 5 seconds to prevent the student from being stuck
-        if (now - checkStartTime > 5000) {
-          faceFound = true;
-          isGoodLighting = true;
-        }
-        
-        if (faceFound) {
-          setChecks(c => ({ ...c, face: true, lighting: isGoodLighting }));
-          
-          if (isGoodLighting) {
-            setStatus('ready');
-            isChecking = false;
-            return;
+  // 3. Lighting + Face scanner
+  useEffect(() => {
+    let scanning = true;
+
+    const scanFrame = async () => {
+      if (!scanning) return;
+      const v = videoRef.current;
+      if (!v || v.videoWidth === 0) {
+        scanTimerRef.current = setTimeout(scanFrame, 300);
+        return;
+      }
+
+      // Lighting
+      try {
+        const c = document.createElement('canvas');
+        c.width = 80; c.height = 60;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(v, 0, 0, 80, 60);
+        const d = ctx.getImageData(0, 0, 80, 60).data;
+        let s = 0;
+        for (let i = 0; i < d.length; i += 4) s += (d[i] + d[i + 1] + d[i + 2]) / 3;
+        const avgBright = s / (d.length / 4);
+        setBrightness(avgBright);
+        setLightStatus(avgBright > 20 ? 'good' : 'warn');
+      } catch (e) { /* ignore */ }
+
+      // Face API scan
+      let faceScanCompleted = false;
+
+      if (window.faceapi && window.faceapi.nets && window.faceapi.nets.tinyFaceDetector) {
+        try {
+          if (!faceApiLoadedRef.current) {
+            try {
+              await window.faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_URL_PRIMARY);
+            } catch (primaryErr) {
+              console.warn('Primary model CDN failed, trying fallback…');
+              await window.faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_URL_FALLBACK);
+            }
+            faceApiLoadedRef.current = true;
           }
-        } else {
-          setChecks(c => ({ ...c, face: false, lighting: false }));
+
+          const dets = await window.faceapi.detectAllFaces(
+            v,
+            new window.faceapi.TinyFaceDetectorOptions({
+              inputSize: 224,
+              scoreThreshold: 0.3,
+            }),
+          );
+
+          faceScanCompleted = true;
+          if (dets && dets.length === 1) {
+            const score = Math.round((dets[0].score || 0) * 100);
+            setFaceConf(score);
+            setFaceStatus('good');
+          } else {
+            setFaceConf(0);
+            setFaceStatus('bad');
+          }
+        } catch (err) {
+          // Fall through to native browser FaceDetector if face-api has a bad frame.
         }
-      } catch (e) {
-        console.warn('Check iteration failed', e);
       }
 
-      if (isChecking) {
-        checkTimeout = setTimeout(runCheck, 500);
+      // Native browser fallback. This helps when the face-api model CDN is slow
+      // or blocked but the browser supports built-in face detection.
+      if (!faceScanCompleted && 'FaceDetector' in window) {
+        try {
+          if (!nativeFaceDetectorRef.current) {
+            nativeFaceDetectorRef.current = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 3 });
+          }
+          const faces = await nativeFaceDetectorRef.current.detect(v);
+          faceScanCompleted = true;
+          if (faces.length === 1) {
+            setFaceConf(90);
+            setFaceStatus('good');
+          } else {
+            setFaceConf(0);
+            setFaceStatus('bad');
+          }
+        } catch (err) {
+          // Ignore and show pending until one detector succeeds.
+        }
       }
+
+      if (!faceScanCompleted) {
+        setFaceStatus('check');
+      }
+
+      if (scanning) scanTimerRef.current = setTimeout(scanFrame, 800);
     };
 
-    // Wait a moment for video to play
-    checkTimeout = setTimeout(runCheck, 1000);
+    scanFrame();
 
     return () => {
-      isChecking = false;
-      clearTimeout(checkTimeout);
+      scanning = false;
+      if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
     };
-  }, [status]);
+  }, []);
 
-  const handleStart = () => {
-    onComplete();
-  };
+  // 4. allReady
+  // Face visibility is mandatory before entering the exam. Microphone is
+  // advisory only, so a mic permission problem will not hide/break camera.
+  useEffect(() => {
+    setAllReady(camStatus === 'good' && faceStatus === 'good');
+  }, [camStatus, faceStatus]);
 
-  const allPassed = checks.camera && checks.mic && checks.face && checks.lighting;
+  const brightPct = Math.round((brightness / 255) * 100);
+  const audioPct = Math.round((audioLevel / 128) * 100);
+
+  const displayTitle = exam?.title || examTitle || 'University Online Exam';
+  const displayQuestionsCount = totalQ || exam?.total_questions || 'N/A';
+  const displayDuration = exam?.duration ? `${exam.duration} Mins` : '60 Mins';
+  const displayDesc =
+    cleanExamDescription(exam?.description) ||
+    'Please read all questions carefully before submitting.';
+
+  const handleManualOverride = () => setManualOverride(true);
 
   return (
     <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      minHeight: '100vh', background: '#f5f5f5', padding: 24
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #f5f7fb 0%, #e9ecf5 100%)',
+      padding: '24px 16px',
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
     }}>
       <div style={{
-        background: '#fff', borderRadius: 12, padding: 32, maxWidth: 600, width: '100%',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.1)'
+        maxWidth: 1100, width: '100%',
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)',
+        gap: 20,
       }}>
-        <h3 style={{ textAlign: 'center', color: '#2D0040', marginBottom: 24 }}>System Environment Check</h3>
-        <p style={{ textAlign: 'center', color: '#555', marginBottom: 24 }}>
-          Before starting <strong>{examTitle}</strong>, we need to verify your camera, microphone, and testing environment.
-        </p>
-
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', justifyContent: 'center' }}>
-          {/* Video Preview */}
-          <div style={{ flex: '1 1 250px', maxWidth: 300 }}>
+        {/* LEFT CARD */}
+        <div style={{
+          background: '#fff', borderRadius: 16, padding: 28,
+          boxShadow: '0 4px 24px rgba(91,10,123,0.08)',
+          border: '1px solid #ece9f4',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
             <div style={{
-              width: '100%', aspectRatio: '4/3', background: '#000', borderRadius: 8, overflow: 'hidden', position: 'relative'
-            }}>
-              <video
-                ref={videoRef}
-                autoPlay
-                muted
-                playsInline
-                style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
-                onLoadedMetadata={() => videoRef.current.play()}
-              />
-              {status === 'requesting' && (
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)' }}>
-                  <Spinner animation="border" variant="light" />
-                </div>
-              )}
+              width: 48, height: 48, borderRadius: 12,
+              background: 'linear-gradient(135deg, #5B0A7B, #7B1FA2)',
+              color: '#fff', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 24,
+            }}>🎓</div>
+            <div>
+              <h2 style={{ margin: 0, color: '#2c2c54', fontSize: 22, fontWeight: 700 }}>
+                {displayTitle}
+              </h2>
+              <div style={{ color: '#7a7a93', fontSize: 13, marginTop: 2 }}>
+                Online Examination & ML AI Proctoring
+              </div>
             </div>
           </div>
 
-          {/* Checklist */}
-          <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <CheckItem label="Camera Access" passed={checks.camera} loading={status === 'requesting'} />
-            <CheckItem label="Microphone Access" passed={checks.mic} loading={status === 'requesting'} />
-            <CheckItem label="Face Visibility" passed={checks.face} loading={status === 'loading_models' || status === 'checking'} />
-            <CheckItem label="Room Lighting" passed={checks.lighting} loading={status === 'loading_models' || status === 'checking'} />
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '18px 0' }}>
+            <div style={{ background: '#f3eafd', color: '#5B0A7B', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700, letterSpacing: 0.5 }}>
+              QUESTIONS: <span style={{ marginLeft: 6 }}>{displayQuestionsCount}</span>
+            </div>
+            <div style={{ background: '#fff3e0', color: '#e65100', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700, letterSpacing: 0.5 }}>
+              DURATION: <span style={{ marginLeft: 6 }}>{displayDuration}</span>
+            </div>
+            <div style={{ background: '#e8f5e9', color: '#2e7d32', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700, letterSpacing: 0.5 }}>
+              PROCTORING: <span style={{ marginLeft: 6 }}>Strict AI</span>
+            </div>
           </div>
-        </div>
 
-        {status === 'error' && (
-          <Alert variant="danger" style={{ marginTop: 24 }}>
-            <strong>Verification Failed:</strong> {errorMsg}
-          </Alert>
-        )}
-
-        {status === 'checking' && !allPassed && (
-          <div style={{ marginTop: 24, textAlign: 'center', color: '#e65100', fontSize: 14 }}>
-            Please look directly at the camera in a well-lit room.
+          <div style={{
+            background: '#faf8ff', border: '1px solid #ece9f4',
+            borderRadius: 12, padding: '14px 16px',
+            fontSize: 14, color: '#444', lineHeight: 1.6,
+          }}>
+            <strong>📋 Overview:</strong> {displayDesc}
           </div>
-        )}
 
-        <div style={{ marginTop: 24, padding: 16, background: '#fff8e1', borderLeft: '4px solid #ffb300', borderRadius: 4, textAlign: 'left', fontSize: 13, color: '#333' }}>
-          <strong style={{ color: '#f57c00' }}>⚠️ Exam Proctoring Rules:</strong>
-          <ul style={{ paddingLeft: 20, marginTop: 8, marginBottom: 12, color: '#555' }}>
-            <li>Ensure your background is clear of any objects to avoid false violations.</li>
-            <li>No mobile phones or electronic devices allowed.</li>
-            <li>No other persons should be in the camera frame.</li>
-            <li>Do not look away from the screen or leave the camera view.</li>
-            <li>No speaking or background noise (Audio violations are recorded).</li>
-            <li>Do not switch tabs or open other applications.</li>
+          <h4 style={{ color: '#c62828', fontSize: 15, marginTop: 24, marginBottom: 12, fontWeight: 700 }}>
+            ⚠️ Strict Rules & Guidelines
+          </h4>
+          <ul style={{ paddingLeft: 18, color: '#444', fontSize: 13.5, lineHeight: 1.7 }}>
+            <li><strong>Face Visibility Required:</strong> Keep your face clearly centered in the camera frame.</li>
+            <li><strong>No Tab / Window Switching:</strong> Triggers instant warnings and auto-submit.</li>
+            <li><strong>No Electronic Devices:</strong> Mobile phones, smartwatches, etc. are prohibited.</li>
+            <li><strong>Quiet Environment:</strong> Maintain a silent room.</li>
+            <li><strong>Final Performance:</strong> Once submitted, your responses are permanently recorded.</li>
           </ul>
-          <div style={{ color: '#d32f2f', fontWeight: 700, marginBottom: 8 }}>
-            🚨 Warning: If violations exceed 3 times, your exam will be automatically terminated.
-          </div>
-          <div style={{ color: '#e65100', fontWeight: 600 }}>
-            ⏱️ Note: Environment verification takes up to 3 minutes. Please be patient.
-          </div>
+
+          <label style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+            marginTop: 20, padding: '12px 14px',
+            background: agreedRules ? '#e8f5e9' : '#fafafa',
+            border: `1.5px solid ${agreedRules ? '#66bb6a' : '#e0e0e0'}`,
+            borderRadius: 10, cursor: 'pointer', fontSize: 13.5, color: '#444',
+            transition: 'all 0.2s',
+          }}>
+            <input
+              type="checkbox"
+              checked={agreedRules}
+              onChange={(e) => setAgreedRules(e.target.checked)}
+              style={{ width: 22, height: 22, cursor: 'pointer', accentColor: '#15803d', flexShrink: 0, marginTop: 2 }}
+            />
+            <span>I have read, understood, and agree to follow all exam rules and proctoring policies.</span>
+          </label>
         </div>
 
-        <div style={{ marginTop: 32, textAlign: 'center' }}>
-          <Button
-            variant="primary"
-            size="lg"
-            disabled={!allPassed}
-            onClick={handleStart}
+        {/* RIGHT CARD */}
+        <div style={{
+          background: '#fff', borderRadius: 16, padding: 28,
+          boxShadow: '0 4px 24px rgba(91,10,123,0.08)',
+          border: '1px solid #ece9f4',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 10,
+              background: '#ede7f6', color: '#5B0A7B',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 20,
+            }}>🛡️</div>
+            <h3 style={{ margin: 0, color: '#2c2c54', fontSize: 19, fontWeight: 700 }}>
+              Pre-Exam Tech Check
+            </h3>
+          </div>
+
+          {/* Live Camera Box */}
+          <div style={{
+            position: 'relative', borderRadius: 14, overflow: 'hidden',
+            background: '#0a0a14', aspectRatio: '4 / 3',
+            border: '2px solid #ece9f4',
+          }}>
+            <video
+              ref={videoRef}
+              autoPlay muted playsInline
+              onClick={() => videoRef.current?.play()}
+              style={{
+                width: '100%', height: '100%', objectFit: 'cover',
+                transform: 'scaleX(-1)', background: '#0a0a14',
+              }}
+            />
+            <div style={{
+              position: 'absolute', top: 10, left: 10,
+              background: 'rgba(229,57,53,0.92)', color: '#fff',
+              padding: '4px 10px', borderRadius: 6,
+              fontSize: 11, fontWeight: 700, letterSpacing: 1,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: '#fff', animation: 'pulse 1.5s infinite',
+              }} />
+              LIVE PROCTOR
+            </div>
+            <div style={{
+              position: 'absolute', top: '50%', left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '55%', aspectRatio: '3 / 4',
+              border: `2px dashed ${
+                faceStatus === 'good' ? 'rgba(76,175,80,0.7)' :
+                faceStatus === 'bad' ? 'rgba(229,57,53,0.7)' :
+                'rgba(255,255,255,0.5)'
+              }`,
+              borderRadius: '50% 50% 45% 45% / 60% 60% 40% 40%',
+              pointerEvents: 'none', transition: 'border-color 0.3s',
+            }} />
+            <div style={{
+              position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(0,0,0,0.6)', color: '#fff',
+              padding: '6px 12px', borderRadius: 999,
+              fontSize: 12, fontWeight: 600,
+            }}>
+              {camStatus === 'pending' && 'Initializing Camera…'}
+              {camStatus === 'check' && 'Connecting…'}
+              {camStatus === 'good' && faceStatus === 'good' && '✓ Face Detected'}
+              {camStatus === 'good' && faceStatus === 'bad' && '⚠️ Face Not Detected'}
+              {camStatus === 'good' && faceStatus === 'pending' && 'Scanning…'}
+              {camStatus === 'bad' && '❌ Camera Error'}
+            </div>
+            {camRes && (
+              <div style={{
+                position: 'absolute', top: 10, right: 10,
+                background: 'rgba(0,0,0,0.5)', color: '#fff',
+                padding: '3px 8px', borderRadius: 4,
+                fontSize: 11, fontFamily: 'monospace',
+              }}>{camRes}</div>
+            )}
+          </div>
+
+          {/* Quality grid */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14,
+          }}>
+            {[
+              { icon: '📸', label: 'Camera', status: camStatus, val: camStatus === 'good' ? 'Connected' : camStatus === 'bad' ? 'Error' : '…' },
+              { icon: '🎙️', label: 'Microphone', status: micStatus, val: `Vol: ${audioPct}%` },
+              { icon: '💡', label: 'Lighting', status: lightStatus, val: `Bright: ${brightPct}%` },
+              { icon: '👤', label: 'Face Visible', status: faceStatus, val: faceConf > 0 ? `Conf: ${faceConf}%` : faceStatus === 'bad' ? 'Not Detected' : '…' },
+            ].map((q, i) => (
+              <div key={i} style={{
+                background: '#fafafa', border: '1px solid #ececec',
+                borderRadius: 10, padding: '10px 12px',
+                display: 'flex', alignItems: 'center', gap: 10,
+              }}>
+                <div style={{ fontSize: 20 }}>{q.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>{q.label}</div>
+                  <StatusBadge status={q.status} text={q.val} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {camStatus === 'good' && micStatus === 'good' && faceStatus !== 'good' && (
+            <div style={{
+              marginTop: 14,
+              background: '#fff8e1', color: '#e65100',
+              padding: '10px 14px', borderRadius: 10, fontSize: 12,
+              border: '1px solid #ffe0b2', lineHeight: 1.5,
+            }}>
+              ⚠️ Keep your face centered inside the guide. The Begin button unlocks only after one face is detected.
+              Camera monitoring will continue during the exam.
+            </div>
+          )}
+
+          {errorMsg && (
+            <div style={{
+              marginTop: 14, background: '#ffebee', color: '#c62828',
+              padding: '10px 14px', borderRadius: 10, fontSize: 13,
+              border: '1px solid #ffcdd2',
+            }}>{errorMsg}</div>
+          )}
+
+          {false && (showOverride || faceStatus === 'bad') && !manualOverride && (
+            <button
+              onClick={handleManualOverride}
+              style={{
+                marginTop: 14, width: '100%',
+                background: '#fff8e1', color: '#e65100',
+                border: '1px solid #ffe0b2', borderRadius: 10,
+                padding: '10px 14px', fontSize: 13, fontWeight: 600,
+                cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              ⚠️ Tech check struggling or AI blocked? Click here to{' '}
+              <strong>Skip Face Scan & Begin</strong> →
+            </button>
+          )}
+
+          {false && manualOverride && (
+            <div style={{
+              marginTop: 14, background: '#fff3e0', color: '#e65100',
+              padding: '10px 14px', borderRadius: 10, fontSize: 12,
+              border: '1px solid #ffe0b2',
+            }}>
+              ✓ Face scan bypass accepted. The camera/proctoring engine will still monitor your exam session.
+            </div>
+          )}
+
+          <button
+            onClick={onComplete}
+            disabled={!allReady || !agreedRules}
             style={{
-              padding: '12px 48px',
-              borderRadius: 30,
-              background: allPassed ? 'linear-gradient(135deg, #667eea, #764ba2)' : '#ccc',
-              border: 'none',
-              fontWeight: 600
+              marginTop: 18, width: '100%',
+              background: allReady && agreedRules
+                ? 'linear-gradient(135deg, #5B0A7B, #7B1FA2)'
+                : '#e0e0e0',
+              color: allReady && agreedRules ? '#fff' : '#888',
+              border: 'none', borderRadius: 12,
+              padding: '14px 24px', fontSize: 16, fontWeight: 700,
+              cursor: allReady && agreedRules ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s', letterSpacing: 0.3,
             }}
           >
-            {allPassed ? 'Start Exam' : 'Verifying...'}
-          </Button>
+            {allReady && agreedRules
+              ? '🚀 Begin Exam Now'
+              : !agreedRules
+              ? '⚠️ Please check the agreement box above first'
+              : camStatus !== 'good'
+              ? '⚠️ Waiting for camera…'
+              : faceStatus !== 'good'
+              ? '⚠️ Waiting for face detection…'
+              : '⚠️ Please accept the rules to begin'}
+          </button>
         </div>
       </div>
     </div>
   );
 };
-
-const CheckItem = ({ label, passed, loading }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: '#f8f9fa', borderRadius: 8 }}>
-    <div style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      {passed ? (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4caf50" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      ) : loading ? (
-        <Spinner animation="border" size="sm" style={{ color: '#888' }} />
-      ) : (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/></svg>
-      )}
-    </div>
-    <span style={{ fontWeight: 600, color: passed ? '#2e7d32' : '#666' }}>{label}</span>
-  </div>
-);
 
 export default PreExamCheck;

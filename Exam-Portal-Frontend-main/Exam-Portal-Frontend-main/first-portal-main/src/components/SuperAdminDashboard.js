@@ -1,6 +1,7 @@
+// src/components/SuperAdminDashboard.js
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Row, Col, Alert, Modal, Button, Badge } from 'react-bootstrap';
+import { Alert } from 'react-bootstrap';
 import apiService from '../services/api';
 import SharedAdminSidebar from './SharedAdminSidebar';
 
@@ -10,38 +11,29 @@ const SuperAdminDashboard = () => {
   const [results, setResults] = useState([]);
   const [admins, setAdmins] = useState([]);
   const [students, setStudents] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [deletionRequests, setDeletionRequests] = useState([]);
-  const [showRequestsModal, setShowRequestsModal] = useState(false);
-  
+
   const superAdmin = apiService.getUser();
   const email = superAdmin?.email || 'Super Admin';
-  const initial = superAdmin?.name ? superAdmin.name.charAt(0).toUpperCase() : 'S';
+  const name = superAdmin?.name || 'Super Admin';
+  const initial = name.charAt(0).toUpperCase();
 
   useEffect(() => {
     fetchData();
-    fetchDeletionRequests();
+    fetchPendingCount();
+    const t = setInterval(fetchPendingCount, 30000);
+    return () => clearInterval(t);
   }, []);
 
-  const fetchDeletionRequests = async () => {
+  const fetchPendingCount = async () => {
     try {
       const res = await apiService.getSuperAdminDeletionRequests();
       if (res.success) {
-        setDeletionRequests((res.requests || []).filter(r => r.status === 'Pending Approval'));
+        setPendingRequests((res.requests || []).filter((r) => r.status === 'Pending Approval').length);
       }
-    } catch (e) { console.error(e); }
-  };
-
-  const handleApproveReject = async (id, action) => {
-    try {
-      await apiService.processDeletionRequest(id, action);
-      fetchDeletionRequests();
-      fetchData(); // Refresh dashboard counts
-    } catch (e) {
-      console.error(e);
-      alert('Action failed');
-    }
+    } catch (e) { /* silent */ }
   };
 
   const fetchData = async () => {
@@ -51,9 +43,8 @@ const SuperAdminDashboard = () => {
         apiService.getExams(),
         apiService.getAdminResults().catch(() => ({ results: [] })),
         apiService.getAdmins().catch(() => ({ admins: [] })),
-        apiService.getStudents().catch(() => ({ students: [] }))
+        apiService.getStudents().catch(() => ({ students: [] })),
       ]);
-      
       setExams(examsData.exams || examsData || []);
       setResults(resultsData.results || resultsData || []);
       setAdmins(adminsData.admins || adminsData || []);
@@ -65,180 +56,101 @@ const SuperAdminDashboard = () => {
     }
   };
 
+  const stats = [
+    { icon: '🛡️', label: 'Total Admins', value: admins.length, tone: 'purple', sub: 'Platform administrators' },
+    { icon: '🎓', label: 'Total Students', value: students.length, tone: 'blue', sub: 'Registered candidates' },
+    { icon: '📝', label: 'Total Exams', value: exams.length, tone: 'orange', sub: 'Created exams' },
+    { icon: '📊', label: 'Submissions', value: results.length, tone: 'green', sub: 'Completed attempts' },
+  ];
+
+  const actions = [
+    { icon: '🔔', label: 'Deletion Requests', sub: pendingRequests > 0 ? `${pendingRequests} pending approvals` : 'No pending requests', to: '/superadmin/deletion-requests', tone: 'orange' },
+    { icon: '🛡️', label: 'Manage Admins', sub: 'Create and oversee admin accounts', to: '/superadmin/manage-admins', tone: 'purple' },
+    { icon: '👥', label: 'Manage Students', sub: 'Add and manage student accounts', to: '/superadmin/students', tone: 'blue' },
+    { icon: '📋', label: 'Manage Exams', sub: 'View and edit existing exams', to: '/superadmin/exams', tone: 'green' },
+    { icon: '➕', label: 'Create New Exam', sub: 'Upload PDF and set answer key', to: '/superadmin/create', tone: 'purple' },
+    { icon: '🚨', label: 'Detected Students', sub: 'Review proctoring violations', to: '/superadmin/detected-students', tone: 'red' },
+  ];
+
   if (loading) {
     return (
-      <div style={{ display: 'flex', minHeight: '100vh', background: '#f8f9fa' }}>
-        <SharedAdminSidebar active="dashboard" />
-        <div className="dashboard-main" style={{ flex: 1, padding: '30px' }}>
-          <div className="loading">Loading Super Admin panel...</div>
-        </div>
+      <div style={{ display: 'flex', minHeight: '100vh' }}>
+        <SharedAdminSidebar />
+        <main className="dashboard-main">
+          <div className="ep-loading-card">
+            <div className="spinner-border text-primary" role="status" />
+            <div>Loading Super Admin panel...</div>
+          </div>
+        </main>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f8f9fa' }}>
-      <SharedAdminSidebar active="dashboard" />
-      
-      <div className="dashboard-main" style={{ flex: 1, padding: '30px', overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 }}>
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <SharedAdminSidebar />
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
           <div>
-            <h2 style={{ margin: 0, fontWeight: 700, color: '#1A237E' }}>Super Admin Dashboard</h2>
-            <p style={{ margin: '4px 0 0 0', color: '#666', fontSize: 14 }}>
-              Platform Overview & Management
-            </p>
+            <div className="ep-kicker">Platform Control</div>
+            <h1>Super Admin Dashboard</h1>
+            <p>Monitor the complete examination platform and manage administrators.</p>
           </div>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ position: 'relative', cursor: 'pointer', marginRight: 15 }} onClick={() => setShowRequestsModal(true)}>
-              <span style={{ fontSize: 24 }}>🔔</span>
-              {deletionRequests.length > 0 && (
-                <span style={{ position: 'absolute', top: -5, right: -5, background: '#d32f2f', color: 'white', borderRadius: '50%', padding: '2px 6px', fontSize: 10, fontWeight: 'bold' }}>
-                  {deletionRequests.length}
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{email}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {initial}
+          <div className="ep-user-chip">
+            <div className="avatar">{initial}</div>
+            <div>
+              <strong>{name}</strong>
+              <span>{email}</span>
             </div>
           </div>
         </div>
 
-        {error && <Alert variant="danger" style={{ borderRadius: 10 }}>{error}</Alert>}
+        {error && <Alert variant="danger" className="ep-alert-box">{error}</Alert>}
 
-        <Row className="g-4 mb-4">
-          <Col md={6} lg={3}>
-            <div className="stat-card" style={{ borderTop: '4px solid #1A237E' }}>
-              <div className="stat-icon" style={{ background: '#E8EAF6' }}>🛡️</div>
-              <h5>Total Admins</h5>
-              <h2>{admins.length}</h2>
+        {pendingRequests > 0 && (
+          <section className="ep-hero-card" style={{ background: 'linear-gradient(135deg,#fff7ed,#ffedd5)', borderColor: '#fed7aa' }}>
+            <div>
+              <span className="ep-badge ep-badge-warning">🔔 Action required</span>
+              <h2>{pendingRequests} deletion request{pendingRequests === 1 ? '' : 's'} awaiting approval</h2>
+              <p>Admins have submitted requests to delete students, exams or results. Review them before data is removed.</p>
             </div>
-          </Col>
-          <Col md={6} lg={3}>
-            <div className="stat-card" style={{ borderTop: '4px solid #9C27B0' }}>
-              <div className="stat-icon" style={{ background: '#F3E5F5' }}>🎓</div>
-              <h5>Total Students</h5>
-              <h2>{students.length}</h2>
-            </div>
-          </Col>
-          <Col md={6} lg={3}>
-            <div className="stat-card" style={{ borderTop: '4px solid #4CAF50' }}>
-              <div className="stat-icon" style={{ background: '#E8F5E9' }}>📝</div>
-              <h5>Total Exams</h5>
-              <h2>{exams.length}</h2>
-            </div>
-          </Col>
-          <Col md={6} lg={3}>
-            <div className="stat-card" style={{ borderTop: '4px solid #FF9800' }}>
-              <div className="stat-icon" style={{ background: '#FFF3E0' }}>📊</div>
-              <h5>Total Submissions</h5>
-              <h2>{results.length}</h2>
-            </div>
-          </Col>
-        </Row>
+            <button className="ep-btn ep-btn-primary" onClick={() => navigate('/superadmin/deletion-requests')}>
+              Review Now →
+            </button>
+          </section>
+        )}
 
-        <Row className="g-4">
-          <Col md={6}>
-            <div className="stat-card" style={{ cursor: 'pointer', border: '1px solid #FFD54F' }} onClick={() => navigate('/superadmin/manage-admins')}>
-              <div className="d-flex align-items-center gap-3">
-                <div className="stat-icon" style={{ background: '#FFF8E1', marginBottom: 0 }}>🛡️</div>
-                <div>
-                  <h5 style={{ margin: 0, color: '#1A237E', fontWeight: 700 }}>Manage Admins</h5>
-                  <p style={{ margin: 0, color: '#888', fontSize: 13 }}>Create and oversee admin/faculty accounts</p>
-                </div>
+        <section className="ep-grid ep-grid-4 ep-mb">
+          {stats.map((s) => (
+            <div className="ep-stat-card" key={s.label}>
+              <div>
+                <div className="ep-stat-label">{s.label}</div>
+                <div className="ep-stat-value">{s.value}</div>
+                <div className="ep-stat-sub">{s.sub}</div>
               </div>
+              <div className={`ep-stat-icon ${s.tone}`}>{s.icon}</div>
             </div>
-          </Col>
-          <Col md={6}>
-            <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/superadmin/students')}>
-              <div className="d-flex align-items-center gap-3">
-                <div className="stat-icon" style={{ background: '#E8F5E9', marginBottom: 0 }}>👥</div>
-                <div>
-                  <h5 style={{ margin: 0, color: '#2D0040', fontWeight: 700 }}>Manage Students</h5>
-                  <p style={{ margin: 0, color: '#888', fontSize: 13 }}>Add and manage student accounts</p>
-                </div>
-              </div>
-            </div>
-          </Col>
-          <Col md={6}>
-            <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/superadmin/exams')}>
-              <div className="d-flex align-items-center gap-3">
-                <div className="stat-icon" style={{ background: '#E3F2FD', marginBottom: 0 }}>📋</div>
-                <div>
-                  <h5 style={{ margin: 0, color: '#2D0040', fontWeight: 700 }}>Manage Exams</h5>
-                  <p style={{ margin: 0, color: '#888', fontSize: 13 }}>View and edit existing exams</p>
-                </div>
-              </div>
-            </div>
-          </Col>
-          <Col md={6}>
-            <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/superadmin/create')}>
-              <div className="d-flex align-items-center gap-3">
-                <div className="stat-icon" style={{ background: '#F3E5F5', marginBottom: 0 }}>➕</div>
-                <div>
-                  <h5 style={{ margin: 0, color: '#2D0040', fontWeight: 700 }}>Create New Exam</h5>
-                  <p style={{ margin: 0, color: '#888', fontSize: 13 }}>Upload PDF and set answer key</p>
-                </div>
-              </div>
-            </div>
-          </Col>
-          <Col md={6}>
-            <div className="stat-card" style={{ cursor: 'pointer', border: '1px solid #ffcdd2' }} onClick={() => navigate('/superadmin/detected-students')}>
-              <div className="d-flex align-items-center gap-3">
-                <div className="stat-icon" style={{ background: '#fff5f5', color: '#c62828', marginBottom: 0 }}>🚨</div>
-                <div>
-                  <h5 style={{ margin: 0, color: '#c62828', fontWeight: 700 }}>Detected Students</h5>
-                  <p style={{ margin: 0, color: '#d32f2f', fontSize: 13 }}>Review proctoring violations</p>
-                </div>
-              </div>
-            </div>
-          </Col>
-        </Row>
-      </div>
+          ))}
+        </section>
 
-      <Modal show={showRequestsModal} onHide={() => setShowRequestsModal(false)} size="lg" centered>
-        <Modal.Header closeButton>
-          <Modal.Title style={{ fontWeight: 700, fontSize: 18 }}>Pending Deletion Requests</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          {deletionRequests.length === 0 ? (
-            <p className="text-muted text-center py-4">No pending requests.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {deletionRequests.map(req => (
-                <div key={req.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #eee', borderRadius: 8, padding: 16 }}>
-                  <div>
-                    <h6 style={{ margin: 0, fontWeight: 700 }}>
-                      <Badge
-                        bg={req.has_violations ? 'danger' : (req.type === 'student' ? 'primary' : 'warning')}
-                        className="me-2"
-                        style={{ marginRight: 8 }}
-                      >
-                        {req.type === 'student' 
-                          ? (req.has_violations ? 'STUDENT & VIOLATIONS' : 'STUDENT') 
-                          : (req.has_violations ? 'RESULT & VIOLATIONS' : 'RESULT')}
-                      </Badge>
-                      {req.student_name} {req.student_email ? `(${req.student_email})` : ''}
-                    </h6>
-                    {req.reason && (
-                      <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#999', fontStyle: 'italic' }}>
-                        Reason: {req.reason}
-                      </p>
-                    )}
-                    <p style={{ margin: 0, fontSize: 13, color: '#666', marginTop: 4 }}>
-                      Requested by: {req.admin_name} | {new Date(req.created_at).toLocaleString('en-IN')}
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Button variant="outline-danger" size="sm" onClick={() => handleApproveReject(req.id, 'reject')}>Reject</Button>
-                    <Button variant="success" size="sm" onClick={() => handleApproveReject(req.id, 'approve')}>Approve</Button>
-                  </div>
-                </div>
-              ))}
+        <section className="ep-card">
+          <div className="ep-card-head">
+            <div>
+              <h3>Quick actions</h3>
+              <p>Jump to the most important platform management areas.</p>
             </div>
-          )}
-        </Modal.Body>
-      </Modal>
+          </div>
+          <div className="ep-action-grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+            {actions.map((a) => (
+              <button className="ep-action-card" key={a.label} onClick={() => navigate(a.to)}>
+                <span>{a.icon}</span>
+                <strong>{a.label}</strong>
+                <small>{a.sub}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+      </main>
     </div>
   );
 };

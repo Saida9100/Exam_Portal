@@ -1,14 +1,15 @@
 // src/components/Dashboard.js
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Row, Col, Button, Alert } from 'react-bootstrap';
+import { Button, Alert } from 'react-bootstrap';
 import Sidebar from './Sidebar';
 import apiService from '../services/api';
+import { parseExamStartTime } from '../utils/exportUtils';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const student = apiService.getUser();
-  
+
   const [exams, setExams] = useState([]);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,385 +23,230 @@ const Dashboard = () => {
     try {
       setLoading(true);
       setError('');
-      
-      // Fetch exams and results in parallel
+
       const [examsData, resultsData] = await Promise.all([
         apiService.getExams(),
-        apiService.getUserResults().catch(() => ({ results: [] }))
+        apiService.getUserResults().catch(() => ({ results: [] })),
       ]);
-      
+
       setExams(examsData.exams || examsData || []);
       setResults(resultsData.results || resultsData || []);
     } catch (err) {
       setError(err.message || 'Failed to fetch dashboard data');
-      console.error('Dashboard fetch error:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = () => {
-    apiService.logout();
-  };
-
-  // Calculate active exams (not expired)
   const getActiveExamsCount = () => {
-    const currentTime = new Date();
+    const now = new Date();
     return exams.filter((exam) => {
-      if (!exam.deadline) return true; // No deadline means always active
-      return new Date(exam.deadline) > currentTime;
+      const startTime = parseExamStartTime(exam);
+      if (startTime && startTime > now) return false;
+      if (!exam.deadline) return true;
+      return new Date(exam.deadline) > now;
     }).length;
   };
 
-  // Calculate completed exams
-  const getCompletedExamsCount = () => {
-    return results.length;
-  };
-
-  // Calculate upcoming exams (with deadline in future)
   const getUpcomingExamsCount = () => {
-    const currentTime = new Date();
+    const now = new Date();
     return exams.filter((exam) => {
-      if (!exam.deadline) return false;
-      const deadline = new Date(exam.deadline);
-      return deadline > currentTime;
+      const startTime = parseExamStartTime(exam);
+      if (!startTime) return false;
+      if (exam.deadline && new Date(exam.deadline) <= now) return false;
+      return startTime > now;
     }).length;
   };
 
-  // Calculate average score
   const getAverageScore = () => {
     if (results.length === 0) return '—';
-    
     const totalPercentage = results.reduce((sum, result) => {
-      const percentage = (result.score / result.total_questions) * 100;
-      return sum + percentage;
+      const total = result.total_questions || 1;
+      return sum + ((result.score || 0) / total) * 100;
     }, 0);
-    
-    return (totalPercentage / results.length).toFixed(1) + '%';
+    return `${(totalPercentage / results.length).toFixed(1)}%`;
   };
 
   const studentEmail = student?.email || 'Student';
   const studentName = student?.name || 'Student';
-  const studentInitial = studentName.charAt(0).toUpperCase();
+  const initial = studentName.charAt(0).toUpperCase();
 
   const activeExamsCount = getActiveExamsCount();
-  const completedExamsCount = getCompletedExamsCount();
+  const completedExamsCount = results.length;
   const upcomingExamsCount = getUpcomingExamsCount();
   const averageScore = getAverageScore();
+
+  const stats = [
+    { label: 'Active Exams', value: activeExamsCount, icon: '📝', tone: 'blue', sub: activeExamsCount > 0 ? 'Ready to attempt' : 'No active exams' },
+    { label: 'Completed', value: completedExamsCount, icon: '✅', tone: 'green', sub: completedExamsCount > 0 ? 'Submitted exams' : 'No submissions yet' },
+    { label: 'Upcoming', value: upcomingExamsCount, icon: '📅', tone: 'orange', sub: upcomingExamsCount > 0 ? 'Scheduled exams' : 'Nothing scheduled' },
+    { label: 'Avg Score', value: averageScore, icon: '📊', tone: 'purple', sub: averageScore === '—' ? 'Available after results' : 'Across all results' },
+  ];
 
   if (loading) {
     return (
       <div style={{ display: 'flex', minHeight: '100vh' }}>
-        <Sidebar active="dashboard" onLogout={handleLogout} />
-        <div className="dashboard-main">
-          <div className="loading" style={{ 
-            display: 'flex', 
-            justifyContent: 'center', 
-            alignItems: 'center', 
-            height: '100vh',
-            fontSize: 18,
-            color: '#667eea'
-          }}>
-            <div>
-              <div className="spinner-border text-primary mb-3" role="status">
-                <span className="visually-hidden">Loading...</span>
-              </div>
-              <div>Loading dashboard...</div>
-            </div>
+        <Sidebar active="dashboard" />
+        <main className="dashboard-main">
+          <div className="ep-loading-card">
+            <div className="spinner-border text-primary" role="status" />
+            <div>Loading dashboard...</div>
           </div>
-        </div>
+        </main>
       </div>
     );
   }
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="dashboard" onLogout={handleLogout} />
+      <Sidebar active="dashboard" />
 
-      <div className="dashboard-main">
-        {/* Topbar */}
-        <div className="dashboard-topbar">
-          <h3>Dashboard</h3>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{studentEmail}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {studentInitial}
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Student Workspace</div>
+            <h1>Dashboard</h1>
+            <p>Track assigned exams, submissions and progress from one place.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{initial}</div>
+            <div>
+              <strong>{studentName}</strong>
+              <span>{studentEmail}</span>
             </div>
           </div>
         </div>
 
-        {/* Error Alert */}
         {error && (
-          <Alert variant="danger" dismissible onClose={() => setError('')} style={{ borderRadius: 10 }}>
+          <Alert variant="danger" dismissible onClose={() => setError('')} className="ep-alert-box">
             {error}
           </Alert>
         )}
 
-        {/* Stats Cards */}
-        <Row className="g-4 mb-4">
-          <Col md={6} lg={3}>
-            <div className="stat-card">
-              <div className="stat-card-inline">
-                <div className="stat-icon" style={{ background: '#E3F2FD' }}>📝</div>
-                <div className="stat-text">
-                  <h5>Active Exams</h5>
-                </div>
-                <div className="stat-number">{activeExamsCount}</div>
-              </div>
-            </div>
-          </Col>
-          <Col md={6} lg={3}>
-            <div className="stat-card">
-              <div className="stat-card-inline">
-                <div className="stat-icon" style={{ background: '#E8F5E9' }}>✅</div>
-                <div className="stat-text">
-                  <h5>Completed</h5>
-                </div>
-                <div className="stat-number" style={{ color: '#4caf50' }}>
-                  {completedExamsCount}
-                </div>
-              </div>
-            </div>
-          </Col>
-          <Col md={6} lg={3}>
-            <div className="stat-card">
-              <div className="stat-card-inline">
-                <div className="stat-icon" style={{ background: '#FFF3E0' }}>⏰</div>
-                <div className="stat-text">
-                  <h5>Upcoming</h5>
-                </div>
-                <div className="stat-number" style={{ color: '#ff9800' }}>
-                  {upcomingExamsCount}
-                </div>
-              </div>
-            </div>
-          </Col>
-          <Col md={6} lg={3}>
-            <div className="stat-card">
-              <div className="stat-card-inline">
-                <div className="stat-icon" style={{ background: '#F3E5F5' }}>📊</div>
-                <div className="stat-text">
-                  <h5>Avg Score</h5>
-                </div>
-                <div className="stat-number" style={{ color: '#7B1FA2' }}>
-                  {averageScore}
-                </div>
-              </div>
-            </div>
-          </Col>
-        </Row>
-
-        {/* Welcome Section */}
-        <div className="welcome-section">
-          <div className="welcome-card">
-            <div className="welcome-icon">👋</div>
-            <h4>Welcome back, {studentName}!</h4>
+        <section className="ep-hero-card">
+          <div>
+            <span className="ep-badge ep-badge-info">👋 Welcome back</span>
+            <h2>{studentName}</h2>
             <p>
-              Your online examination platform. Take exams, track your progress,
-              and view your results all in one place.
+              Take exams, monitor upcoming schedules and review your performance reports.
+              Keep your camera and microphone ready before starting any proctored exam.
             </p>
+          </div>
+          <div className="ep-hero-actions">
+            <Button className="ep-btn ep-btn-primary" onClick={() => navigate('/exams')}>
+              View Exams →
+            </Button>
+            <Button className="ep-btn ep-btn-outline" onClick={() => navigate('/results')} disabled={completedExamsCount === 0}>
+              View Results
+            </Button>
+          </div>
+        </section>
 
-            <div className="welcome-info-grid">
-              <div className="welcome-info-item">
-                <span className="welcome-info-icon">📧</span>
-                <span><strong>Email:</strong> {studentEmail}</span>
+        <section className="ep-grid ep-grid-4 ep-mb">
+          {stats.map((item) => (
+            <div className="ep-stat-card" key={item.label}>
+              <div>
+                <div className="ep-stat-label">{item.label}</div>
+                <div className="ep-stat-value">{item.value}</div>
+                <div className="ep-stat-sub">{item.sub}</div>
               </div>
-              <div className="welcome-info-item">
-                <span className="welcome-info-icon">👤</span>
-                <span><strong>Role:</strong> {student?.role || 'Student'}</span>
-              </div>
-              <div className="welcome-info-item">
-                <span className="welcome-info-icon">📝</span>
-                <span><strong>Active Exams:</strong> {activeExamsCount} available</span>
-              </div>
-              <div className="welcome-info-item">
-                <span className="welcome-info-icon">✅</span>
-                <span><strong>Completed:</strong> {completedExamsCount} exams</span>
+              <div className={`ep-stat-icon ${item.tone}`}>{item.icon}</div>
+            </div>
+          ))}
+        </section>
+
+        <section className="ep-grid ep-grid-main">
+          <div className="ep-card">
+            <div className="ep-card-head">
+              <div>
+                <h3>Quick actions</h3>
+                <p>Continue with the most common student tasks.</p>
               </div>
             </div>
+            <div className="ep-action-grid">
+              <button className="ep-action-card" onClick={() => navigate('/exams')} disabled={activeExamsCount === 0 && upcomingExamsCount === 0}>
+                <span>🚀</span>
+                <strong>Take an Exam</strong>
+                <small>{activeExamsCount} active, {upcomingExamsCount} upcoming</small>
+              </button>
+              <button className="ep-action-card" onClick={() => navigate('/results')} disabled={completedExamsCount === 0}>
+                <span>📈</span>
+                <strong>View Results</strong>
+                <small>{completedExamsCount} result{completedExamsCount === 1 ? '' : 's'} available</small>
+              </button>
+              <button className="ep-action-card" onClick={() => navigate('/exams')}>
+                <span>🔐</span>
+                <strong>Enter Exam Code</strong>
+                <small>Use the code shared by your administrator</small>
+              </button>
+            </div>
+          </div>
 
-            {activeExamsCount > 0 ? (
-              <div style={{ marginTop: 24 }}>
-                <Button
-                  onClick={() => navigate('/exams')}
-                  style={{
-                    background: 'linear-gradient(135deg, #5B0A7B, #7B1FA2)',
-                    border: 'none',
-                    borderRadius: 10,
-                    padding: '12px 32px',
-                    fontWeight: 600,
-                    fontSize: 15,
-                  }}
-                >
-                  View Available Exams →
-                </Button>
+          <div className="ep-card">
+            <div className="ep-card-head">
+              <div>
+                <h3>Exam tips</h3>
+                <p>Prepare before you begin.</p>
               </div>
-            ) : (
-              <div style={{ 
-                marginTop: 24, 
-                padding: 16, 
-                background: '#f8f9fa', 
-                borderRadius: 10,
-                textAlign: 'center',
-                color: '#666'
-              }}>
-                <span style={{ fontSize: 32, marginBottom: 8, display: 'block' }}>📭</span>
-                <strong>No active exams available at the moment</strong>
-                <div style={{ fontSize: 13, marginTop: 4 }}>
-                  Check back later or contact your instructor
-                </div>
-              </div>
+            </div>
+            <ul className="ep-tip-list">
+              <li>Use a stable internet connection.</li>
+              <li>Allow camera and microphone permissions.</li>
+              <li>Do not switch tabs or open other windows.</li>
+              <li>Keep your face clearly visible.</li>
+              <li>Submit before the timer ends.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section className="ep-card ep-mt">
+          <div className="ep-card-head">
+            <div>
+              <h3>Recent activity</h3>
+              <p>Your latest completed exam submissions.</p>
+            </div>
+            {results.length > 5 && (
+              <button className="ep-btn ep-btn-outline" onClick={() => navigate('/results')}>View all</button>
             )}
           </div>
-        </div>
 
-        {/* Quick Actions */}
-        <Row className="g-4 mt-4">
-          <Col md={6}>
-            <div 
-              className="stat-card" 
-              style={{ cursor: activeExamsCount > 0 ? 'pointer' : 'not-allowed', opacity: activeExamsCount > 0 ? 1 : 0.6 }} 
-              onClick={() => activeExamsCount > 0 && navigate('/exams')}
-            >
-              <div className="d-flex align-items-center gap-3">
-                <div className="stat-icon" style={{ background: '#E8F5E9', marginBottom: 0 }}>🚀</div>
-                <div>
-                  <h5 style={{ margin: 0, color: '#2D0040', fontWeight: 700 }}>Take an Exam</h5>
-                  <p style={{ margin: 0, color: '#888', fontSize: 13 }}>
-                    {activeExamsCount > 0 
-                      ? `${activeExamsCount} exam${activeExamsCount > 1 ? 's' : ''} available`
-                      : 'No exams available'
-                    }
-                  </p>
-                </div>
-              </div>
+          {results.length === 0 ? (
+            <div className="ep-empty">
+              <div>📭</div>
+              <h4>No activity yet</h4>
+              <p>Completed exams and result summaries will appear here.</p>
             </div>
-          </Col>
-          <Col md={6}>
-            <div 
-              className="stat-card" 
-              style={{ cursor: completedExamsCount > 0 ? 'pointer' : 'not-allowed', opacity: completedExamsCount > 0 ? 1 : 0.6 }} 
-              onClick={() => completedExamsCount > 0 && navigate('/results')}
-            >
-              <div className="d-flex align-items-center gap-3">
-                <div className="stat-icon" style={{ background: '#FFF3E0', marginBottom: 0 }}>📈</div>
-                <div>
-                  <h5 style={{ margin: 0, color: '#2D0040', fontWeight: 700 }}>View Results</h5>
-                  <p style={{ margin: 0, color: '#888', fontSize: 13 }}>
-                    {completedExamsCount > 0 
-                      ? `${completedExamsCount} result${completedExamsCount > 1 ? 's' : ''} available`
-                      : 'No results yet'
-                    }
-                  </p>
-                </div>
-              </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="ep-table">
+                <thead>
+                  <tr>
+                    <th>Exam</th>
+                    <th>Submitted</th>
+                    <th>Score</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {results.slice(0, 5).map((result, index) => {
+                    const total = result.total_questions || 1;
+                    const percentage = (((result.score || 0) / total) * 100).toFixed(1);
+                    const passed = Number(percentage) >= 60;
+                    return (
+                      <tr key={result.attempt_id || index} onClick={() => navigate(`/result/${result.attempt_id || result.id}`)}>
+                        <td className="cell-strong">{result.exam_title || 'Untitled Exam'}</td>
+                        <td>{result.submitted_at ? new Date(result.submitted_at).toLocaleString('en-IN') : '—'}</td>
+                        <td className="cell-strong">{percentage}%</td>
+                        <td><span className={`ep-badge ${passed ? 'ep-badge-success' : 'ep-badge-danger'}`}>{passed ? 'Passed' : 'Failed'}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          </Col>
-        </Row>
-
-        {/* Recent Activity */}
-        {results.length > 0 && (
-          <div style={{ marginTop: 32 }}>
-            <h5 style={{ color: '#2D0040', fontWeight: 700, marginBottom: 16 }}>Recent Activity</h5>
-            <div className="create-exam-card">
-              {results.slice(0, 5).map((result, index) => {
-                const percentage = ((result.score / result.total_questions) * 100).toFixed(1);
-                const passed = percentage >= 60;
-                
-                return (
-                  <div 
-                    key={index}
-                    style={{
-                      padding: 16,
-                      borderBottom: index < Math.min(4, results.length - 1) ? '1px solid #e0e0e0' : 'none',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      cursor: 'pointer',
-                      transition: 'background 0.2s',
-                    }}
-                    onClick={() => navigate(`/result/${result.attempt_id || result.id}`)}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600, color: '#1a1a2e', marginBottom: 4 }}>
-                        {result.exam_title}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#888' }}>
-                        {new Date(result.submitted_at).toLocaleString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ 
-                        fontSize: 20, 
-                        fontWeight: 700, 
-                        color: passed ? '#4caf50' : '#e53935',
-                        marginBottom: 4
-                      }}>
-                        {percentage}%
-                      </div>
-                      <div style={{
-                        display: 'inline-block',
-                        padding: '4px 12px',
-                        borderRadius: 20,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        background: passed ? '#e8f5e9' : '#ffebee',
-                        color: passed ? '#2e7d32' : '#c62828'
-                      }}>
-                        {passed ? 'Passed' : 'Failed'}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              
-              {results.length > 5 && (
-                <div style={{ padding: 16, textAlign: 'center' }}>
-                  <Button 
-                    variant="outline-primary" 
-                    size="sm"
-                    onClick={() => navigate('/results')}
-                    style={{ borderRadius: 8, fontWeight: 600 }}
-                  >
-                    View All Results ({results.length})
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Tips Section */}
-        <Row className="g-4 mt-4">
-          <Col md={12}>
-            <div className="create-exam-card" style={{ background: 'linear-gradient(135deg, #f8f9fa, #e9ecef)' }}>
-              <div style={{ display: 'flex', alignItems: 'start', gap: 16 }}>
-                <span style={{ fontSize: 32 }}>💡</span>
-                <div>
-                  <h6 style={{ fontWeight: 700, color: '#1a1a2e', marginBottom: 8 }}>
-                    Exam Tips
-                  </h6>
-                  <ul style={{ margin: 0, paddingLeft: 20, color: '#555', fontSize: 14, lineHeight: 1.8 }}>
-                    <li>Make sure you have a stable internet connection before starting</li>
-                    <li>Read all questions carefully before answering</li>
-                    <li>Manage your time wisely - check the timer regularly</li>
-                    <li>Review your answers before submitting</li>
-                    <li>Avoid refreshing the page during the exam</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </Col>
-        </Row>
-      </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 };

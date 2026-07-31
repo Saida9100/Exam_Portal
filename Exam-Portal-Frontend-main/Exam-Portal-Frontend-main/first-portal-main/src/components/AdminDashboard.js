@@ -1,10 +1,12 @@
 /* eslint-disable */
 // src/components/AdminDashboard.js
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom'; 
 import { Row, Col, Form, Button, Alert, Modal, Table } from 'react-bootstrap';
 import apiService from '../services/api';
 import SharedAdminSidebar from './SharedAdminSidebar';
+import ExportToolbar from './ExportToolbar';
+import { prepareStudentsForExport, prepareExamsForExport, prepareResultsForExport, prepareAdminsForExport, getExportFilename, filterByDateRange, parseExamStartTime, cleanExamDescription } from '../utils/exportUtils';
 
 // Password generator (same logic as StudentManagement)
 const generatePassword = (name) => {
@@ -99,13 +101,18 @@ const AdminDashboard = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <SharedAdminSidebar active="dashboard" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div className="dashboard-topbar">
-          <h3>Admin Dashboard</h3>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{adminEmail}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {adminInitial}
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Faculty Workspace</div>
+            <h1>Admin Dashboard</h1>
+            <p>Monitor portal activity, manage exams, students, and proctoring violations.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{adminEmail}</span>
             </div>
           </div>
         </div>
@@ -267,7 +274,7 @@ const AdminDashboard = () => {
             </div>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 };
@@ -286,13 +293,31 @@ const CreateExam = () => {
   const [totalQuestions, setTotalQuestions] = useState('');
   const [duration, setDuration] = useState('');
   const [deadline, setDeadline] = useState('');
+  const [startTime, setStartTime] = useState('');
   
   const [showDeadlineModal, setShowDeadlineModal] = useState(false);
   const [tempDeadline, setTempDeadline] = useState('');
+
+  const [showStartTimeModal, setShowStartTimeModal] = useState(false);
+  const [tempStartTime, setTempStartTime] = useState('');
   
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const [adminsList, setAdminsList] = useState([]);
+  const [selectedAdminId, setSelectedAdminId] = useState('');
+
+  useEffect(() => {
+    if (admin?.role === 'super_admin') {
+      apiService.getAdmins()
+        .then(res => {
+          const allAdmins = res.admins || res.data || [];
+          setAdminsList(allAdmins.filter(a => a.role === 'admin'));
+        })
+        .catch(console.error);
+    }
+  }, [admin?.role]);
 
   const handleLogout = () => {
     apiService.logout();
@@ -314,6 +339,22 @@ const CreateExam = () => {
     setShowDeadlineModal(false);
   };
 
+  const openStartTimePicker = () => {
+    setTempStartTime(startTime);
+    setShowStartTimeModal(true);
+  };
+
+  const confirmStartTime = () => {
+    setStartTime(tempStartTime);
+    setShowStartTimeModal(false);
+  };
+
+  const clearStartTime = () => {
+    setStartTime('');
+    setTempStartTime('');
+    setShowStartTimeModal(false);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -333,18 +374,41 @@ const CreateExam = () => {
       return;
     }
 
+    if (startTime && deadline && new Date(startTime) >= new Date(deadline)) {
+      setError('Deadline (Exam End Time) must be after the Scheduled Start Time.');
+      return;
+    }
+
+    if (admin?.role === 'super_admin' && !selectedAdminId) {
+      setError('Please assign this exam to an admin');
+      return;
+    }
+
     setLoading(true);
 
     try {
+      const finalDescription = startTime 
+        ? `${description.trim()}\n[ScheduledStart: ${new Date(startTime).toISOString()}]`.trim()
+        : description.trim() || null;
+
+      const formattedDeadline = deadline ? new Date(deadline).toISOString().slice(0, 19).replace('T', ' ') : null;
+      const formattedStartTime = startTime ? new Date(startTime).toISOString().slice(0, 19).replace('T', ' ') : null;
+
       const examData = {
         title: title.trim(),
-        description: description.trim() || null,
+        description: finalDescription,
         total_questions: parseInt(totalQuestions),
         duration: parseInt(duration),
-        deadline: deadline || null,
+        deadline: formattedDeadline,
+        start_time: formattedStartTime,
+        scheduled_at: formattedStartTime,
       };
 
-      // Call API to create exam (you'll need to implement this endpoint)
+      if (admin?.role === 'super_admin') {
+        examData.admin_id = selectedAdminId;
+      }
+
+      // Call API to create exam
       const response = await apiService.createExamDbMode(examData);
 
       setSuccess(true);
@@ -367,6 +431,7 @@ const CreateExam = () => {
     setTotalQuestions('');
     setDuration('');
     setDeadline('');
+    setStartTime('');
     setSuccess(false);
     setError('');
   };
@@ -469,72 +534,165 @@ const CreateExam = () => {
                     </Col>
                   </Row>
 
-                  <Form.Group className="mb-4">
-                    <Form.Label className="form-label-custom">Deadline (Optional)</Form.Label>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      {deadline ? (
-                        <div style={{
-                          flex: 1,
-                          padding: '12px 16px',
-                          borderRadius: 10,
-                          border: '1.5px solid #4caf50',
-                          background: '#f1f8e9',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                        }}>
-                          <div>
-                            <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase' }}>
-                              Deadline Set
+                  <Row>
+                    <Col md={6}>
+                      <Form.Group className="mb-4">
+                        <Form.Label className="form-label-custom">Scheduled Start Time (Upcoming)</Form.Label>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                          {startTime ? (
+                            <div style={{
+                              flex: 1,
+                              padding: '12px 16px',
+                              borderRadius: 10,
+                              border: '1.5px solid #ff9800',
+                              background: '#fff8e1',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}>
+                              <div>
+                                <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase' }}>
+                                  Starts At
+                                </div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: '#2D0040' }}>
+                                  {formatDeadlineDisplay(startTime)}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <Button
+                                  size="sm"
+                                  variant="outline-primary"
+                                  onClick={openStartTimePicker}
+                                  style={{ borderRadius: 8, fontWeight: 600, fontSize: 12 }}
+                                  disabled={loading}
+                                >
+                                  Change
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline-danger"
+                                  onClick={clearStartTime}
+                                  style={{ borderRadius: 8, fontWeight: 600, fontSize: 12 }}
+                                  disabled={loading}
+                                >
+                                  Remove
+                                </Button>
+                              </div>
                             </div>
-                            <div style={{ fontSize: 15, fontWeight: 600, color: '#2D0040' }}>
-                              {formatDeadlineDisplay(deadline)}
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: 8 }}>
+                          ) : (
                             <Button
-                              size="sm"
-                              variant="outline-primary"
-                              onClick={openDeadlinePicker}
-                              style={{ borderRadius: 8, fontWeight: 600, fontSize: 12 }}
+                              variant="outline-secondary"
+                              onClick={openStartTimePicker}
                               disabled={loading}
+                              style={{
+                                borderRadius: 10,
+                                padding: '12px 24px',
+                                fontWeight: 600,
+                                width: '100%',
+                                border: '1.5px dashed #ffe0b2',
+                                color: '#888',
+                                background: '#fafafa',
+                              }}
                             >
-                              Change
+                              ⏳ Schedule Start Time
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="outline-danger"
-                              onClick={clearDeadline}
-                              style={{ borderRadius: 8, fontWeight: 600, fontSize: 12 }}
-                              disabled={loading}
-                            >
-                              Remove
-                            </Button>
-                          </div>
+                          )}
                         </div>
-                      ) : (
-                        <Button
-                          variant="outline-secondary"
-                          onClick={openDeadlinePicker}
-                          disabled={loading}
-                          style={{
-                            borderRadius: 10,
-                            padding: '12px 24px',
-                            fontWeight: 600,
-                            width: '100%',
-                            border: '1.5px dashed #E1BEE7',
-                            color: '#888',
-                            background: '#fafafa',
-                          }}
-                        >
-                          📅 Click to Set Deadline
-                        </Button>
-                      )}
-                    </div>
-                    <Form.Text style={{ color: '#888', fontSize: 11 }}>
-                      Leave empty for no deadline
-                    </Form.Text>
-                  </Form.Group>
+                        <Form.Text style={{ color: '#888', fontSize: 11 }}>
+                          Leave empty to open immediately
+                        </Form.Text>
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group className="mb-4">
+                        <Form.Label className="form-label-custom">Deadline (Optional)</Form.Label>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                          {deadline ? (
+                            <div style={{
+                              flex: 1,
+                              padding: '12px 16px',
+                              borderRadius: 10,
+                              border: '1.5px solid #4caf50',
+                              background: '#f1f8e9',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}>
+                              <div>
+                                <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase' }}>
+                                  Deadline Set
+                                </div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: '#2D0040' }}>
+                                  {formatDeadlineDisplay(deadline)}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <Button
+                                  size="sm"
+                                  variant="outline-primary"
+                                  onClick={openDeadlinePicker}
+                                  style={{ borderRadius: 8, fontWeight: 600, fontSize: 12 }}
+                                  disabled={loading}
+                                >
+                                  Change
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline-danger"
+                                  onClick={clearDeadline}
+                                  style={{ borderRadius: 8, fontWeight: 600, fontSize: 12 }}
+                                  disabled={loading}
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <Button
+                              variant="outline-secondary"
+                              onClick={openDeadlinePicker}
+                              disabled={loading}
+                              style={{
+                                borderRadius: 10,
+                                padding: '12px 24px',
+                                fontWeight: 600,
+                                width: '100%',
+                                border: '1.5px dashed #E1BEE7',
+                                color: '#888',
+                                background: '#fafafa',
+                              }}
+                            >
+                              📅 Click to Set Deadline
+                            </Button>
+                          )}
+                        </div>
+                        <Form.Text style={{ color: '#888', fontSize: 11 }}>
+                          Leave empty for no deadline
+                        </Form.Text>
+                      </Form.Group>
+                    </Col>
+                  </Row>
+
+                  {admin?.role === 'super_admin' && (
+                    <Form.Group className="mb-3">
+                      <Form.Label className="form-label-custom">
+                        Assign to Admin <span style={{ color: '#dc3545' }}>*</span>
+                      </Form.Label>
+                      <Form.Control
+                        as="select"
+                        className="form-input-custom"
+                        value={selectedAdminId}
+                        onChange={(e) => setSelectedAdminId(e.target.value)}
+                        disabled={loading}
+                      >
+                        <option value="">-- Select an Admin --</option>
+                        {adminsList.map(a => (
+                          <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
+                        ))}
+                      </Form.Control>
+                    </Form.Group>
+                  )}
                 </div>
               </Col>
 
@@ -557,6 +715,23 @@ const CreateExam = () => {
                       </div>
                     </Col>
                   </Row>
+
+                  {startTime && (
+                    <div style={{
+                      marginTop: 16,
+                      padding: 12,
+                      background: '#fff8e1',
+                      borderRadius: 10,
+                      textAlign: 'center',
+                    }}>
+                      <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase' }}>
+                        Starts At
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#e65100' }}>
+                        {formatDeadlineDisplay(startTime)}
+                      </div>
+                    </div>
+                  )}
 
                   {deadline && (
                     <div style={{
@@ -669,6 +844,80 @@ const CreateExam = () => {
             </div>
           </Modal.Body>
         </Modal>
+
+        {/* Start Time Picker Modal */}
+        <Modal show={showStartTimeModal} onHide={() => setShowStartTimeModal(false)} centered>
+          <Modal.Body style={{ padding: 0 }}>
+            <div style={{ padding: 28, textAlign: 'center' }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>⏳</div>
+              <h5 style={{ fontWeight: 700, color: '#2D0040', marginBottom: 4 }}>Set Scheduled Start Time</h5>
+              <p style={{ color: '#888', fontSize: 13, marginBottom: 24 }}>
+                Choose the date and time when this exam becomes available to students
+              </p>
+
+              <Form.Control
+                type="datetime-local"
+                value={tempStartTime}
+                onChange={(e) => setTempStartTime(e.target.value)}
+                min={new Date().toISOString().slice(0, 16)}
+                style={{
+                  borderRadius: 12,
+                  padding: '14px 16px',
+                  border: '2px solid #ffb74d',
+                  fontSize: 16,
+                  fontWeight: 500,
+                  textAlign: 'center',
+                  marginBottom: 12,
+                }}
+              />
+
+              {tempStartTime && (
+                <div style={{
+                  background: '#fff8e1',
+                  borderRadius: 10,
+                  padding: 12,
+                  marginBottom: 20,
+                  fontSize: 14,
+                  color: '#e65100',
+                  fontWeight: 500,
+                }}>
+                  Selected: {formatDeadlineDisplay(tempStartTime)}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 8 }}>
+                <Button
+                  variant="outline-secondary"
+                  onClick={() => setShowStartTimeModal(false)}
+                  style={{ borderRadius: 10, padding: '10px 28px', fontWeight: 600 }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="outline-danger"
+                  onClick={clearStartTime}
+                  style={{ borderRadius: 10, padding: '10px 28px', fontWeight: 600 }}
+                >
+                  Immediately
+                </Button>
+                <Button
+                  onClick={confirmStartTime}
+                  disabled={!tempStartTime}
+                  style={{
+                    borderRadius: 10,
+                    padding: '10px 28px',
+                    fontWeight: 700,
+                    background: '#e65100',
+                    border: 'none',
+                    fontSize: 15,
+                  }}
+                >
+                  ✓ OK — Set Start Time
+                </Button>
+              </div>
+            </div>
+          </Modal.Body>
+        </Modal>
       </div>
     </div>
   );
@@ -690,14 +939,21 @@ const ManageExams = () => {
   const [examToDelete, setExamToDelete] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredExams = exams.filter(e => 
-    (e.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (e.description || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const [adminsList, setAdminsList] = useState([]);
+  const [selectedFilterAdminId, setSelectedFilterAdminId] = useState('');
+  const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
 
   useEffect(() => {
     fetchExams();
-  }, []);
+    if (admin?.role === 'super_admin') {
+      apiService.getAdmins()
+        .then(res => {
+          const allAdmins = res.admins || res.data || [];
+          setAdminsList(allAdmins.filter(a => a.role === 'admin'));
+        })
+        .catch(console.error);
+    }
+  }, [admin?.role]);
 
   const fetchExams = async () => {
     try {
@@ -709,6 +965,25 @@ const ManageExams = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const adminFilteredExams = selectedFilterAdminId 
+    ? exams.filter(e => String(e.admin_id) === String(selectedFilterAdminId))
+    : exams;
+
+  const searchFilteredExams = adminFilteredExams.filter(e => 
+    (e.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (e.description || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const finalFilteredExams = filterByDateRange(searchFilteredExams, exportFilters.startDate, exportFilters.endDate, 'created_at');
+
+  const getExamAdmin = (exam) => {
+    const found = adminsList.find(a => String(a.id) === String(exam.admin_id));
+    return {
+      name: exam.admin_name || found?.name || found?.email || (exam.admin_id ? `Admin #${exam.admin_id}` : '—'),
+      email: exam.admin_email || found?.email || '',
+    };
   };
 
   const handleLogout = () => {
@@ -733,10 +1008,7 @@ const ManageExams = () => {
     if (!examToDelete) return;
 
     try {
-      // Call API to delete exam (you'll need to implement this endpoint)
       await apiService.deleteExam(examToDelete.id);
-      
-      // Refresh exams list
       fetchExams();
       setShowDeleteModal(false);
       setExamToDelete(null);
@@ -759,13 +1031,18 @@ const ManageExams = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <SharedAdminSidebar active="exams" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div className="dashboard-topbar">
-          <h3>Manage Exams</h3>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{adminEmail}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {adminInitial}
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Faculty Workspace</div>
+            <h1>Manage Exams</h1>
+            <p>Monitor status, review access codes, and delete active exam papers.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{adminEmail}</span>
             </div>
           </div>
         </div>
@@ -800,11 +1077,27 @@ const ManageExams = () => {
               gap: 10,
               marginBottom: 20,
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 24, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, flexWrap: 'wrap' }}>
                 <h5 style={{ margin: 0, color: '#2D0040', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                  All Exams ({exams.length})
+                  All Exams ({finalFilteredExams.length})
                 </h5>
-                <div style={{ width: '100%', maxWidth: 500 }}>
+
+                {admin?.role === 'super_admin' && (
+                  <div style={{ minWidth: 200 }}>
+                    <select
+                      value={selectedFilterAdminId}
+                      onChange={e => setSelectedFilterAdminId(e.target.value)}
+                      style={{ padding: '8px 12px', borderRadius: 8, border: '2px solid #f0f0f5', fontSize: 13, outline: 'none', background: '#fff', color: '#5B0A7B', fontWeight: 600 }}
+                    >
+                      <option value="">All Faculty / Admins</option>
+                      {adminsList.map(a => (
+                        <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div style={{ flex: 1, minWidth: 250 }}>
                   <input
                     placeholder="🔍  Search exams by title or description..."
                     value={searchTerm}
@@ -813,7 +1106,15 @@ const ManageExams = () => {
                   />
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <ExportToolbar
+                  data={finalFilteredExams}
+                  prepareExportData={prepareExamsForExport}
+                  filename={getExportFilename(admin?.role, 'exams')}
+                  title="Exams Report"
+                  dateField="created_at"
+                  onFilterChange={(filters) => setExportFilters(filters)}
+                />
                 {admin?.role === 'super_admin' && (
                   <Button
                     onClick={handleClearData}
@@ -848,27 +1149,63 @@ const ManageExams = () => {
               <thead>
                 <tr style={{ background: '#F8F0FB' }}>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Title</th>
+                  {admin?.role === 'super_admin' && (
+                    <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Assigned Admin</th>
+                  )}
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Questions</th>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Duration</th>
+                  <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Start Time</th>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Deadline</th>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Status</th>
                   <th style={{ fontWeight: 600, color: '#5B0A7B', padding: 12 }}>Actions</th>
                 </tr>
               </thead>
                 <tbody>
-                  {filteredExams.length === 0 ? (
+                  {finalFilteredExams.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ padding: 40, textAlign: 'center', color: '#888' }}>
+                      <td colSpan={admin?.role === 'super_admin' ? 8 : 7} style={{ padding: 40, textAlign: 'center', color: '#888' }}>
                         No matching exams found.
                       </td>
                     </tr>
-                  ) : filteredExams.map((exam) => {
-                  const isActive = !exam.deadline || new Date(exam.deadline) > new Date();
+                  ) : finalFilteredExams.map((exam) => {
+                  const startTime = parseExamStartTime(exam);
+                  const isUpcoming = startTime && startTime > new Date();
+                  const isActive = !isUpcoming && (!exam.deadline || new Date(exam.deadline) > new Date());
                   return (
                     <tr key={exam.id}>
-                      <td style={{ padding: 12, fontWeight: 500 }}>{exam.title}</td>
+                      <td style={{ padding: 12 }}>
+                        <div style={{ fontWeight: 600, color: '#2D0040' }}>{exam.title}</div>
+                        <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{cleanExamDescription(exam.description)}</div>
+                      </td>
+                      {admin?.role === 'super_admin' && (() => {
+                        const assignedAdmin = getExamAdmin(exam);
+                        return (
+                          <td style={{ padding: 12 }}>
+                            <div style={{ fontWeight: 700, color: '#2D0040', fontSize: 13 }}>{assignedAdmin.name}</div>
+                            {assignedAdmin.email && (
+                              <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>{assignedAdmin.email}</div>
+                            )}
+                            <div style={{
+                              display: 'inline-block', marginTop: 5, padding: '2px 8px', borderRadius: 999,
+                              background: '#f0f4ff', color: '#5B0A7B', fontSize: 11, fontWeight: 700
+                            }}>
+                              ID: {exam.admin_id || '—'}
+                            </div>
+                          </td>
+                        );
+                      })()}
                       <td style={{ padding: 12 }}>{exam.total_questions}</td>
                       <td style={{ padding: 12 }}>{exam.duration} min</td>
+                      <td style={{ padding: 12, fontSize: 13, color: '#e65100', fontWeight: 600 }}>
+                        {startTime
+                          ? new Date(startTime).toLocaleString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : 'Immediately'}
+                      </td>
                       <td style={{ padding: 12, fontSize: 13 }}>
                         {exam.deadline
                           ? new Date(exam.deadline).toLocaleString('en-IN', {
@@ -885,10 +1222,10 @@ const ManageExams = () => {
                           borderRadius: 20,
                           fontSize: 12,
                           fontWeight: 600,
-                          background: isActive ? '#e8f5e9' : '#ffebee',
-                          color: isActive ? '#2e7d32' : '#c62828',
+                          background: isUpcoming ? '#fff3e0' : (isActive ? '#e8f5e9' : '#ffebee'),
+                          color: isUpcoming ? '#e65100' : (isActive ? '#2e7d32' : '#c62828'),
                         }}>
-                          {isActive ? 'Active' : 'Expired'}
+                          {isUpcoming ? '⏳ Upcoming' : (isActive ? 'Active' : 'Expired')}
                         </span>
                       </td>
                       <td style={{ padding: 12 }}>
@@ -915,7 +1252,7 @@ const ManageExams = () => {
             </Table>
           </div>
         )}
-      </div>
+      </main>
 
       <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)} centered>
         <Modal.Header closeButton>
@@ -966,11 +1303,48 @@ const ViewResults = () => {
   const [deletionRequests, setDeletionRequests] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredResults = results.filter(r => 
+  const [adminsList, setAdminsList] = useState([]);
+  const [selectedFilterAdminId, setSelectedFilterAdminId] = useState('');
+  const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
+  const [examAdminMap, setExamAdminMap] = useState({});
+
+  useEffect(() => {
+    fetchResults();
+    fetchDeletionRequests();
+    apiService.getExams().then(data => {
+      const examsList = data.exams || data || [];
+      const map = {};
+      examsList.forEach(e => {
+        map[e.id] = e.admin_id;
+        if (e.title) map[e.title] = e.admin_id;
+      });
+      setExamAdminMap(map);
+    }).catch(() => {});
+
+    if (admin?.role === 'super_admin') {
+      apiService.getAdmins()
+        .then(res => {
+          const allAdmins = res.admins || res.data || [];
+          setAdminsList(allAdmins.filter(a => a.role === 'admin'));
+        })
+        .catch(console.error);
+    }
+  }, [admin?.role]);
+
+  const adminFilteredResults = selectedFilterAdminId
+    ? results.filter(r => {
+        const rAdmin = r.admin_id || examAdminMap[r.exam_id] || examAdminMap[r.exam_title];
+        return String(rAdmin) === String(selectedFilterAdminId);
+      })
+    : results;
+
+  const searchFilteredResults = adminFilteredResults.filter(r => 
     (r.student_name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
     (r.student_email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (r.exam_title || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const finalFilteredResults = filterByDateRange(searchFilteredResults, exportFilters.startDate, exportFilters.endDate, 'submitted_at');
 
   const confirmDelete = async () => {
     try {
@@ -1013,11 +1387,6 @@ const ViewResults = () => {
     }
   };
 
-  useEffect(() => {
-    fetchResults();
-    fetchDeletionRequests();
-  }, []);
-
   const fetchDeletionRequests = async () => {
     try {
       const res = await apiService.getAdminDeletionRequests();
@@ -1055,13 +1424,18 @@ const ViewResults = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <SharedAdminSidebar active="results" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div className="dashboard-topbar">
-          <h3>Student Results</h3>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{adminEmail}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {adminInitial}
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Faculty Workspace</div>
+            <h1>Student Results</h1>
+            <p>Export submissions, analyze exam grades, and approve deletion requests.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{adminEmail}</span>
             </div>
           </div>
         </div>
@@ -1077,11 +1451,27 @@ const ViewResults = () => {
         ) : (
           <div className="create-exam-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 24, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, flexWrap: 'wrap' }}>
                 <h5 style={{ margin: 0, color: '#2D0040', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                  All Submissions ({results.length})
+                  All Submissions ({finalFilteredResults.length})
                 </h5>
-                <div style={{ width: '100%', maxWidth: 500 }}>
+
+                {admin?.role === 'super_admin' && (
+                  <div style={{ minWidth: 200 }}>
+                    <select
+                      value={selectedFilterAdminId}
+                      onChange={e => setSelectedFilterAdminId(e.target.value)}
+                      style={{ padding: '8px 12px', borderRadius: 8, border: '2px solid #f0f0f5', fontSize: 13, outline: 'none', background: '#fff', color: '#5B0A7B', fontWeight: 600 }}
+                    >
+                      <option value="">All Faculty / Admins</option>
+                      {adminsList.map(a => (
+                        <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div style={{ flex: 1, minWidth: 250 }}>
                   <input
                     placeholder="🔍  Search by student, email or exam..."
                     value={searchTerm}
@@ -1090,20 +1480,30 @@ const ViewResults = () => {
                   />
                 </div>
               </div>
-              {admin?.role === 'super_admin' && (
-                <Button
-                  onClick={handleClearData}
-                  variant="outline-danger"
-                  style={{
-                    borderRadius: 8,
-                    padding: '8px 20px',
-                    fontWeight: 600,
-                    fontSize: 13,
-                  }}
-                >
-                  Clear Data
-                </Button>
-              )}
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <ExportToolbar
+                  data={finalFilteredResults}
+                  prepareExportData={prepareResultsForExport}
+                  filename={getExportFilename(admin?.role, 'results')}
+                  title="Student Results Report"
+                  dateField="submitted_at"
+                  onFilterChange={(filters) => setExportFilters(filters)}
+                />
+                {admin?.role === 'super_admin' && (
+                  <Button
+                    onClick={handleClearData}
+                    variant="outline-danger"
+                    style={{
+                      borderRadius: 8,
+                      padding: '8px 20px',
+                      fontWeight: 600,
+                      fontSize: 13,
+                    }}
+                  >
+                    Clear Data
+                  </Button>
+                )}
+              </div>
             </div>
             <Table responsive hover>
               <thead>
@@ -1120,13 +1520,13 @@ const ViewResults = () => {
                 </tr>
               </thead>
                 <tbody>
-                  {filteredResults.length === 0 ? (
+                  {finalFilteredResults.length === 0 ? (
                     <tr>
                       <td colSpan="9" style={{ padding: 40, textAlign: 'center', color: '#888' }}>
                         No matching results found.
                       </td>
                     </tr>
-                  ) : filteredResults.map((result, idx) => {
+                  ) : finalFilteredResults.map((result, idx) => {
                     const percentage = ((result.score / result.total_questions) * 100).toFixed(1);
                   const passed = percentage >= 60;
                   
@@ -1220,7 +1620,7 @@ const ViewResults = () => {
             </Table>
           </div>
         )}
-      </div>
+      </main>
 
       <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)} centered>
         <Modal.Header closeButton>
@@ -1286,19 +1686,24 @@ const AdminSettings = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <SharedAdminSidebar active="settings" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div className="dashboard-topbar">
-          <h3>Settings</h3>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{adminEmail}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {adminInitial}
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Faculty Workspace</div>
+            <h1>Settings</h1>
+            <p>Update your administrator credentials and change your account password.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{adminEmail}</span>
             </div>
           </div>
         </div>
 
         <div className="create-exam-card" style={{ maxWidth: 500 }}>
-          <h5 style={{ color: '#2D0040', fontWeight: 700, marginBottom: 24 }}>Change Password</h5>
+          <h5 style={{ color: 'var(--ep-ink)', fontWeight: 700, marginBottom: 24 }}>Change Password</h5>
           
           {error && <Alert variant="danger" style={{ borderRadius: 10 }}>{error}</Alert>}
           
@@ -1312,11 +1717,11 @@ const AdminSettings = () => {
 
           {saved && <Alert variant="success" style={{ borderRadius: 10, fontWeight: 600, marginTop: 16 }}>✓ Password updated successfully!</Alert>}
           <Button onClick={handleSave} disabled={loading}
-            style={{ marginTop: 20, width: '100%', background: 'linear-gradient(135deg,#2D0040,#5B0A7B)', border: 'none', borderRadius: 10, padding: '12px 32px', fontWeight: 700, fontSize: 15 }}>
+            style={{ marginTop: 20, width: '100%', background: 'linear-gradient(135deg,#0f172a,var(--ep-brand))', border: 'none', borderRadius: 10, padding: '12px 32px', fontWeight: 700, fontSize: 15 }}>
             {loading ? 'Saving...' : 'Update Password'}
           </Button>
         </div>
-      </div>
+      </main>
     </div>
   );
 };
@@ -1330,6 +1735,10 @@ const ManageAdmins = () => {
   const adminInitial = admin?.name ? admin.name.charAt(0).toUpperCase() : 'A';
 
   const [admins, setAdmins] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [selectedFilterAdminId, setSelectedFilterAdminId] = useState('');
+  const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -1360,12 +1769,28 @@ const ManageAdmins = () => {
     }
   };
 
-  useEffect(() => { fetchAdmins(); }, []);
+  const fetchStudents = async () => {
+    try {
+      const res = await apiService.getStudents();
+      setStudents(res.students || []);
+    } catch (e) { console.error(e); }
+  };
 
-  const filteredAdmins = admins.filter(a => 
+  useEffect(() => { 
+    fetchAdmins(); 
+    fetchStudents();
+  }, []);
+
+  const dropdownFilteredAdmins = selectedFilterAdminId
+    ? admins.filter(a => String(a.id) === String(selectedFilterAdminId))
+    : admins;
+
+  const searchFilteredAdmins = dropdownFilteredAdmins.filter(a => 
     (a.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
     (a.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const finalFilteredAdmins = filterByDateRange(searchFilteredAdmins, exportFilters.startDate, exportFilters.endDate, 'created_at');
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -1450,7 +1875,9 @@ const ManageAdmins = () => {
       if (data.success) {
         setBulkResult(data.data);
         const created = data.data?.summary?.created ?? validAdmins.length;
-        setSuccess(`✅ ${created} admin(s) created successfully!`);
+        const createdRows = data.data?.created || [];
+        const sentCount = createdRows.filter((r) => r.email_sent).length;
+        setSuccess(`✅ ${created} admin(s) created successfully! 📨 ${sentCount}/${created} credentials email(s) sent.`);
         fetchAdmins();
         
         setTimeout(() => {
@@ -1501,13 +1928,18 @@ const ManageAdmins = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <SharedAdminSidebar active="manage-admins" onLogout={handleLogout} />
-      <div className="dashboard-main">
-        <div className="dashboard-topbar">
-          <h3>Manage Admins (Faculty)</h3>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{adminEmail}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {adminInitial}
+      <main className="dashboard-main ep-page">
+        <div className="ep-page-header">
+          <div>
+            <div className="ep-kicker">Platform Admin Control</div>
+            <h1>Manage Admins (Faculty)</h1>
+            <p>Create and oversee Faculty Administrator accounts across the institution.</p>
+          </div>
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{adminEmail}</span>
             </div>
           </div>
         </div>
@@ -1547,19 +1979,46 @@ const ManageAdmins = () => {
 
         {tab === 'list' && (
           <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0f0f5', display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
-              <div style={{ width: '100%', maxWidth: 500 }}>
-                <input
-                  placeholder="🔍  Search admins by name or email..."
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                  style={{ padding: '10px 16px', borderRadius: 8, border: '2px solid #f0f0f5', fontSize: 14, width: '100%', outline: 'none' }}
-                />
+            {selectedFilterAdminId && (
+              <div style={{ padding: '12px 24px', background: '#e8f5e9', color: '#2e7d32', borderBottom: '1px solid #c8e6c9', fontWeight: 700, fontSize: 14 }}>
+                🎓 Number of Students Assigned to this Faculty/Admin: {students.filter(s => String(s.admin_id) === String(selectedFilterAdminId)).length}
               </div>
+            )}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0f0f5', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, flexWrap: 'wrap' }}>
+                <div style={{ minWidth: 200 }}>
+                  <select
+                    value={selectedFilterAdminId}
+                    onChange={e => setSelectedFilterAdminId(e.target.value)}
+                    style={{ padding: '8px 12px', borderRadius: 8, border: '2px solid #f0f0f5', fontSize: 13, outline: 'none', background: '#fff', color: '#5B0A7B', fontWeight: 600 }}
+                  >
+                    <option value="">All Faculty / Admins</option>
+                    {admins.map(a => (
+                      <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ flex: 1, minWidth: 250 }}>
+                  <input
+                    placeholder="🔍  Search admins by name or email..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    style={{ padding: '10px 16px', borderRadius: 8, border: '2px solid #f0f0f5', fontSize: 14, width: '100%', outline: 'none' }}
+                  />
+                </div>
+              </div>
+              <ExportToolbar
+                data={finalFilteredAdmins}
+                prepareExportData={prepareAdminsForExport}
+                filename={getExportFilename('super_admin', 'admins')}
+                title="Admins Report"
+                dateField="created_at"
+                onFilterChange={(filters) => setExportFilters(filters)}
+              />
             </div>
             {loading ? (
               <div style={{ padding: 60, textAlign: 'center', color: '#888' }}>Loading admins…</div>
-            ) : filteredAdmins.length === 0 ? (
+            ) : finalFilteredAdmins.length === 0 ? (
               <div style={{ padding: 60, textAlign: 'center' }}>
                 <div style={{ fontSize: 56, marginBottom: 12 }}>🛡️</div>
                 <p style={{ color: '#888', fontSize: 15 }}>No admins found.</p>
@@ -1568,13 +2027,13 @@ const ManageAdmins = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#f8f6fc' }}>
-                    {['#', 'Name', 'Email', 'Role', 'Joined', 'Action'].map(h => (
+                    {['#', 'Name', 'Email', 'Role', 'Assigned Students', 'Joined', 'Action'].map(h => (
                       <th key={h} style={{ padding: '14px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAdmins.map((a, i) => (
+                  {finalFilteredAdmins.map((a, i) => (
                     <tr key={a.id || i} style={{ borderTop: '1px solid #f0f0f5' }}>
                       <td style={{ padding: '14px 20px', fontSize: 13, color: '#999' }}>{i + 1}</td>
                       <td style={{ padding: '14px 20px' }}>
@@ -1590,6 +2049,9 @@ const ManageAdmins = () => {
                         <span style={{ padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: '#e8eaf6', color: '#3949ab' }}>
                           {a.role === 'super_admin' ? 'Super Admin' : 'Admin (Faculty)'}
                         </span>
+                      </td>
+                      <td style={{ padding: '14px 20px', fontWeight: 600, color: '#2e7d32', fontSize: 13 }}>
+                        {students.filter(s => String(s.admin_id) === String(a.id)).length} Students
                       </td>
                       <td style={{ padding: '14px 20px', fontSize: 12, color: '#888' }}>
                         {a.created_at ? new Date(a.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
@@ -1639,7 +2101,7 @@ const ManageAdmins = () => {
                 />
               </div>
               <div style={{ marginBottom: 28 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ display: 'flex', justifycontent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <label style={{ fontWeight: 600, fontSize: 13, color: '#444' }}>Password *</label>
                   <label style={{ fontSize: 12, color: '#5B0A7B', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                     <input type="checkbox" checked={autoPass} onChange={e => {
@@ -1748,7 +2210,7 @@ const ManageAdmins = () => {
             </div>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 };

@@ -9,11 +9,12 @@ const SharedAdminSidebar = ({ active, onLogout }) => {
   const isSuperAdmin = currentUser?.role === 'super_admin';
   const basePath = isSuperAdmin ? '/superadmin' : '/admin';
 
-  // Determine active from location if not provided
   let activeKey = active;
   if (!activeKey) {
     const path = location.pathname;
     if (path === basePath) activeKey = 'dashboard';
+    else if (path.includes('/deletion-requests')) activeKey = 'deletion-requests';
+    else if (path.includes('/detected-students')) activeKey = 'detected-students';
     else if (path.includes('/create')) activeKey = 'create';
     else if (path.includes('/exams')) activeKey = 'exams';
     else if (path.includes('/students')) activeKey = 'students';
@@ -29,87 +30,65 @@ const SharedAdminSidebar = ({ active, onLogout }) => {
     ...(isSuperAdmin ? [{ key: 'manage-admins', label: 'Manage Admins', icon: '🛡️', path: `${basePath}/manage-admins` }] : []),
     { key: 'students', label: 'Student Accounts', icon: '👥', path: `${basePath}/students` },
     { key: 'results', label: 'View Results', icon: '📊', path: `${basePath}/results` },
+    ...(isSuperAdmin ? [
+      { key: 'deletion-requests', label: 'Deletion Requests', icon: '🔔', path: `${basePath}/deletion-requests` },
+      { key: 'detected-students', label: 'Detected Students', icon: '🚨', path: `${basePath}/detected-students` },
+    ] : [
+      { key: 'detected-students', label: 'Detected Students', icon: '🚨', path: `${basePath}/detected-students` },
+    ]),
     { key: 'settings', label: 'Settings', icon: '⚙️', path: `${basePath}/settings` },
   ];
 
+  const initial = currentUser?.name?.charAt(0)?.toUpperCase() || currentUser?.email?.charAt(0)?.toUpperCase() || 'A';
+
   return (
-    <div className="sidebar" style={{ width: 260, minWidth: 260, flexShrink: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '24px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)', textAlign: 'center' }}>
-        {isSuperAdmin ? (
-          <>
-            <h2 style={{ color: '#fff', fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: 1, whiteSpace: 'nowrap' }}>
-              Super Admin Panel
-            </h2>
-            <span style={{ color: '#CE93D8', fontSize: 11 }}>ExamPortal</span>
-          </>
-        ) : (
-          <>
-            <h2 style={{ color: '#fff', fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: 1, whiteSpace: 'nowrap' }}>
-              Admin Panel
-            </h2>
-            <span style={{ color: '#CE93D8', fontSize: 11 }}>ExamPortal</span>
-          </>
-        )}
+    <aside className="sidebar">
+      <div className="sb-brand">
+        <div className="sb-logo">EP</div>
+        <div className="sb-brand-text">
+          {isSuperAdmin ? 'Super Admin' : 'Admin Panel'}
+          <small>ExamPortal</small>
+        </div>
       </div>
 
-      <div style={{ padding: '16px 0', flex: 1 }}>
-        {menuItems.map(item => (
-          <div
+      <div className="sb-section">Workspace</div>
+      <nav style={{ display: 'grid', gap: 4 }}>
+        {menuItems.map((item) => (
+          <button
+            type="button"
             key={item.key}
-            className={`sidebar-item ${activeKey === item.key ? 'active' : ''}`}
+            className={`sb-link ${activeKey === item.key ? 'active' : ''}`}
             onClick={() => navigate(item.path)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '12px 24px', margin: '4px 12px', borderRadius: 10,
-              cursor: 'pointer',
-              color: activeKey === item.key ? '#fff' : 'rgba(255,255,255,0.7)',
-              background: activeKey === item.key ? 'rgba(255,255,255,0.15)' : 'transparent',
-              fontWeight: activeKey === item.key ? 600 : 400,
-              fontSize: 14, transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={e => {
-              if (activeKey !== item.key) e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
-            }}
-            onMouseLeave={e => {
-              if (activeKey !== item.key) e.currentTarget.style.background = 'transparent';
-            }}
           >
-            <span style={{ fontSize: 18 }}>{item.icon}</span>
+            <span className="sb-icon">{item.icon}</span>
             <span>{item.label}</span>
-          </div>
+          </button>
         ))}
-      </div>
+      </nav>
 
-      <div style={{ padding: '16px 12px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-        <div
-          onClick={() => navigate(`${basePath}/settings`)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            padding: '12px 24px', borderRadius: 10, cursor: 'pointer',
-            color: 'rgba(255,255,255,0.7)', fontSize: 14, transition: 'all 0.2s ease',
-            marginBottom: 4
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-        >
-          <span style={{ fontSize: 18 }}>🔑</span>
+      <div className="sb-footer">
+        <div className="sb-user">
+          <div className="avatar">{initial}</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: '#fff', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentUser?.name || (isSuperAdmin ? 'Super Admin' : 'Admin')}
+            </div>
+            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentUser?.email || ''}
+            </div>
+          </div>
+        </div>
+
+        <button type="button" className="sb-action password" onClick={() => navigate(`${basePath}/settings`)}>
+          <span>🔑</span>
           <span>Change Password</span>
-        </div>
-        <div
-          onClick={onLogout || (() => apiService.logout())}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            padding: '12px 24px', borderRadius: 10, cursor: 'pointer',
-            color: 'rgba(255,255,255,0.7)', fontSize: 14, transition: 'all 0.2s ease',
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,60,60,0.15)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-        >
-          <span style={{ fontSize: 18 }}>🚪</span>
+        </button>
+        <button type="button" className="sb-action danger" onClick={onLogout || (() => apiService.logout())}>
+          <span>🚪</span>
           <span>Logout</span>
-        </div>
+        </button>
       </div>
-    </div>
+    </aside>
   );
 };
 

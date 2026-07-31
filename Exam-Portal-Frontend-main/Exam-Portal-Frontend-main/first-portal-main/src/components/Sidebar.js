@@ -14,9 +14,7 @@ const Sidebar = ({ active }) => {
   const [pwLoading, setPwLoading] = useState(false);
   const [pwMsg, setPwMsg] = useState({ type: '', text: '' });
 
-  const handleLogout = () => {
-    apiService.logout();
-  };
+  const handleLogout = () => apiService.logout();
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
@@ -24,12 +22,18 @@ const Sidebar = ({ active }) => {
     if (!oldPw || !newPw || !confirmPw) return setPwMsg({ type: 'error', text: 'All fields are required.' });
     if (newPw !== confirmPw) return setPwMsg({ type: 'error', text: 'New passwords do not match.' });
     if (newPw.length < 6) return setPwMsg({ type: 'error', text: 'Password must be at least 6 characters.' });
+
     setPwLoading(true);
     try {
       await apiService.changePassword(oldPw, newPw);
       setPwMsg({ type: 'success', text: '✅ Password changed successfully!' });
-      setOldPw(''); setNewPw(''); setConfirmPw('');
-      setTimeout(() => { setShowPwModal(false); setPwMsg({ type: '', text: '' }); }, 1800);
+      setOldPw('');
+      setNewPw('');
+      setConfirmPw('');
+      setTimeout(() => {
+        setShowPwModal(false);
+        setPwMsg({ type: '', text: '' });
+      }, 1800);
     } catch (err) {
       setPwMsg({ type: 'error', text: err.message || 'Failed to change password.' });
     } finally {
@@ -43,154 +47,116 @@ const Sidebar = ({ active }) => {
     { key: 'results', label: 'Results', path: '/results', icon: '📊' },
   ];
 
+  const initial = user?.name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U';
+
   return (
     <>
-      <div className="sidebar">
-        {/* Brand Header */}
-        <div className="sidebar-brand" style={{
-          padding: '24px 20px',
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
-          textAlign: 'center'
-        }}>
-          <h2 style={{ color: '#fff', fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: 1 }}>
+      <aside className="sidebar">
+        <div className="sb-brand">
+          <div className="sb-logo">EP</div>
+          <div className="sb-brand-text">
             ExamPortal
-          </h2>
-          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, margin: '4px 0 0 0', textTransform: 'uppercase', letterSpacing: 1 }}>
-            {user?.role === 'admin' || user?.role === 'super_admin' ? 'Admin' : 'Student'}
-          </p>
+            <small>{user?.role === 'student' ? 'Student Workspace' : 'Portal'}</small>
+          </div>
         </div>
 
-        {/* Menu Items */}
-        <div style={{ padding: '16px 0', flex: 1 }}>
-          {menuItems.map(item => (
-            <div
+        <div className="sb-section">Main Menu</div>
+        <nav style={{ display: 'grid', gap: 4 }}>
+          {menuItems.map((item) => (
+            <button
+              type="button"
               key={item.key}
-              className={`sidebar-item ${active === item.key ? 'active' : ''}`}
               onClick={() => navigate(item.path)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '12px 24px', margin: '4px 12px', borderRadius: 10,
-                cursor: 'pointer',
-                color: active === item.key ? '#fff' : 'rgba(255,255,255,0.7)',
-                background: active === item.key ? 'rgba(255,255,255,0.15)' : 'transparent',
-                fontWeight: active === item.key ? 600 : 400,
-                fontSize: 14, transition: 'all 0.2s ease',
-              }}
-              onMouseEnter={e => {
-                if (active !== item.key) e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
-              }}
-              onMouseLeave={e => {
-                if (active !== item.key) e.currentTarget.style.background = 'transparent';
-              }}
+              className={`sb-link ${active === item.key ? 'active' : ''}`}
             >
-              <span style={{ fontSize: 18 }}>{item.icon}</span>
+              <span className="sb-icon">{item.icon}</span>
               <span>{item.label}</span>
-            </div>
+            </button>
           ))}
-        </div>
+        </nav>
 
-        {/* User Info Section */}
-        <div style={{ padding: '12px 20px', borderTop: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.1)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.2)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#fff', fontWeight: 700, fontSize: 14
-            }}>
-              {user?.name?.charAt(0)?.toUpperCase() || 'U'}
-            </div>
-            <div style={{ flex: 1, overflow: 'hidden' }}>
-              <div style={{ color: '#fff', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div className="sb-footer">
+          <div className="sb-user">
+            <div className="avatar">{initial}</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: '#fff', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {user?.name || 'User'}
               </div>
-              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {user?.email || ''}
-              </div>
+              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email || ''}</div>
             </div>
           </div>
 
-          {/* Change Password Button */}
-          <div
-            onClick={() => { setShowPwModal(true); setPwMsg({ type: '', text: '' }); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '10px 16px', borderRadius: 8, cursor: 'pointer',
-              color: 'rgba(255,255,255,0.7)', fontSize: 13, transition: 'all 0.2s ease',
-              border: '1px solid rgba(255,255,255,0.1)', marginBottom: 8,
+          <button
+            type="button"
+            className="sb-action password"
+            onClick={() => {
+              setShowPwModal(true);
+              setPwMsg({ type: '', text: '' });
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(100,100,255,0.12)'; e.currentTarget.style.color = '#fff'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
           >
-            <span style={{ fontSize: 16 }}>🔒</span>
+            <span>🔒</span>
             <span>Change Password</span>
-          </div>
+          </button>
 
-          {/* Logout Button */}
-          <div
-            onClick={handleLogout}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '10px 16px', borderRadius: 8, cursor: 'pointer',
-              color: 'rgba(255,255,255,0.7)', fontSize: 13, transition: 'all 0.2s ease',
-              border: '1px solid rgba(255,255,255,0.1)'
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,0,0,0.1)'; e.currentTarget.style.borderColor = 'rgba(255,0,0,0.3)'; e.currentTarget.style.color = '#fff'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
-          >
-            <span style={{ fontSize: 16 }}>🚪</span>
+          <button type="button" className="sb-action danger" onClick={handleLogout}>
+            <span>🚪</span>
             <span>Logout</span>
-          </div>
+          </button>
         </div>
-      </div>
+      </aside>
 
-      {/* Change Password Modal */}
       {showPwModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#fff', borderRadius: 16, padding: 32, width: 380, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', position: 'relative' }}>
-            <button
-              onClick={() => setShowPwModal(false)}
-              style={{ position: 'absolute', top: 14, right: 18, background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#aaa' }}
-            >×</button>
-            <div style={{ textAlign: 'center', marginBottom: 20 }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>🔒</div>
-              <h4 style={{ margin: 0, fontWeight: 700, color: '#2D0040' }}>Change Password</h4>
-              <p style={{ margin: '4px 0 0', color: '#888', fontSize: 13 }}>Update your account password</p>
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(15,23,42,0.55)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000, padding: 20,
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 16, padding: 24,
+            width: '100%', maxWidth: 390, boxShadow: 'var(--ep-shadow-lg)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+              <div>
+                <h3 style={{ margin: 0, color: 'var(--ep-ink)', fontSize: 18, fontWeight: 800 }}>Change Password</h3>
+                <div style={{ color: 'var(--ep-muted)', fontSize: 13, marginTop: 3 }}>Update your account password</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPwModal(false)}
+                style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--ep-muted)', lineHeight: 1 }}
+              >×</button>
             </div>
+
             {pwMsg.text && (
               <div style={{
-                padding: '10px 14px', borderRadius: 8, marginBottom: 14, fontSize: 13, fontWeight: 600,
-                background: pwMsg.type === 'success' ? '#e8f5e9' : '#ffebee',
-                color: pwMsg.type === 'success' ? '#2e7d32' : '#c62828',
-                border: `1px solid ${pwMsg.type === 'success' ? '#4caf50' : '#f44336'}`
-              }}>
-                {pwMsg.text}
-              </div>
+                padding: 11, marginBottom: 13,
+                background: pwMsg.type === 'error' ? 'var(--ep-danger-soft)' : 'var(--ep-success-soft)',
+                color: pwMsg.type === 'error' ? '#991b1b' : '#166534',
+                borderRadius: 10, fontSize: 13,
+              }}>{pwMsg.text}</div>
             )}
+
             <form onSubmit={handleChangePassword}>
               {[
                 { label: 'Current Password', val: oldPw, set: setOldPw },
                 { label: 'New Password', val: newPw, set: setNewPw },
-                { label: 'Confirm New Password', val: confirmPw, set: setConfirmPw }
+                { label: 'Confirm New Password', val: confirmPw, set: setConfirmPw },
               ].map(({ label, val, set }) => (
-                <div key={label} style={{ marginBottom: 14 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>{label}</label>
+                <div className="ep-field" key={label}>
+                  <label>{label}</label>
                   <input
                     type="password"
                     value={val}
-                    onChange={e => set(e.target.value)}
+                    onChange={(e) => set(e.target.value)}
                     placeholder={label}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '2px solid #e0e0e0', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
-                    onFocus={e => e.target.style.borderColor = '#667eea'}
-                    onBlur={e => e.target.style.borderColor = '#e0e0e0'}
+                    disabled={pwLoading}
                   />
                 </div>
               ))}
-              <button
-                type="submit"
-                disabled={pwLoading}
-                style={{ width: '100%', padding: '12px 0', background: 'linear-gradient(135deg,#667eea,#764ba2)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: pwLoading ? 'not-allowed' : 'pointer', marginTop: 4 }}
-              >
+
+              <button type="submit" className="ep-btn ep-btn-primary ep-btn-block" disabled={pwLoading}>
                 {pwLoading ? 'Updating...' : 'Update Password'}
               </button>
             </form>

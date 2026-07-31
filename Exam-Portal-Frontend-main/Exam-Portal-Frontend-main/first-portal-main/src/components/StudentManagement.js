@@ -1,98 +1,57 @@
 /* eslint-disable */
+// src/components/StudentManagement.js
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiService from '../services/api';
 import SharedAdminSidebar from './SharedAdminSidebar';
+import ExportToolbar from './ExportToolbar';
+import { prepareStudentsForExport, getExportFilename, filterByDateRange } from '../utils/exportUtils';
 
-/* ─── helpers ─── */
-// ✅ PRODUCTION-READY PASSWORD GENERATOR
+// Password generator (secure and compliant)
 const generatePassword = (name) => {
-  /**
-   * Generates a secure password that meets:
-   * - Minimum 8 characters
-   * - At least one uppercase letter
-   * - At least one lowercase letter
-   * - At least one digit
-   * - At least one special character
-   */
-
-  if (!name || name.trim() === '') {
-    // Fallback if no name provided
-    name = 'student';
-  }
-
-  // Extract name base (lowercase, remove special chars)
-  const nameBase = name
-    .trim()
-    .split(' ')[0]
-    .toLowerCase()
-    .replace(/[^a-z]/g, '')
-    .substring(0, 4); // Limit to 4 chars
-
-  // Character sets
+  if (!name || name.trim() === '') name = 'student';
+  const nameBase = name.trim().split(' ')[0].toLowerCase().replace(/[^a-z]/g, '').substring(0, 4);
   const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const digits = '0123456789';
   const specials = '!@#$%^&*';
-
-  // Guarantee each requirement is met
-  const passwordParts = [
-    nameBase, // Lowercase (from name)
-    uppercase[Math.floor(Math.random() * uppercase.length)], // Uppercase
-    digits[Math.floor(Math.random() * digits.length)], // First digit
-    specials[Math.floor(Math.random() * specials.length)], // Special char
-    digits[Math.floor(Math.random() * digits.length)], // Second digit (for length)
+  const parts = [
+    nameBase,
+    uppercase[Math.floor(Math.random() * uppercase.length)],
+    digits[Math.floor(Math.random() * digits.length)],
+    specials[Math.floor(Math.random() * specials.length)],
+    digits[Math.floor(Math.random() * digits.length)],
   ];
-
-  // Add random lowercase letters if the length is less than 8
   const lowercase = 'abcdefghijklmnopqrstuvwxyz';
-  while (passwordParts.join('').length < 8) {
-    passwordParts.push(lowercase[Math.floor(Math.random() * lowercase.length)]);
+  while (parts.join('').length < 8) {
+    parts.push(lowercase[Math.floor(Math.random() * lowercase.length)]);
   }
-
-  // Shuffle for randomness
-  for (let i = passwordParts.length - 1; i > 0; i--) {
+  for (let i = parts.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [passwordParts[i], passwordParts[j]] = [passwordParts[j], passwordParts[i]];
+    [parts[i], parts[j]] = [parts[j], parts[i]];
   }
-
-  const password = passwordParts.join('');
-
-  // Verify it meets all requirements
-  const meetsRequirements =
-    password.length >= 8 &&
-    /[A-Z]/.test(password) &&
-    /[a-z]/.test(password) &&
-    /[0-9]/.test(password) &&
-    /[!@#$%^&*]/.test(password);
-
-  if (!meetsRequirements) {
-    // Recursive call if somehow it doesn't meet requirements
-    console.warn('Generated password did not meet requirements, regenerating...');
-    return generatePassword(name + 'a'); // ensure the name is longer to prevent infinite loop
-  }
-
-  return password;
+  const pw = parts.join('');
+  const ok = pw.length >= 8 && /[A-Z]/.test(pw) && /[a-z]/.test(pw) && /[0-9]/.test(pw) && /[!@#$%^&*]/.test(pw);
+  return ok ? pw : generatePassword(name + 'a');
 };
 
-const downloadCSV = (rows, filename) => {
-  const header = Object.keys(rows[0]).join(',');
-  const body = rows.map(r => Object.values(r).map(v => `"${v}"`).join(',')).join('\n');
-  const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+const StatusPill = ({ status }) => {
+  const meta = {
+    'Pending Approval': { className: 'ep-badge-warning', icon: '⏳' },
+    'Approved': { className: 'ep-badge-success', icon: '✅' },
+    'Rejected': { className: 'ep-badge-danger', icon: '❌' },
+  }[status] || { className: '', icon: '•' };
+  return (
+    <span className={`ep-badge ${meta.className}`}>
+      <span>{meta.icon}</span>&nbsp;{status}
+    </span>
+  );
 };
 
-// Sidebar is imported from SharedAdminSidebar.js
-
-/* ─── main component ─── */
 const StudentManagement = () => {
   const navigate = useNavigate();
   const admin = apiService.getUser();
   const fileRef = useRef();
 
-  // tab: 'list' | 'bulk' | 'manual'
   const [tab, setTab] = useState('list');
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -101,160 +60,153 @@ const StudentManagement = () => {
   const [success, setSuccess] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Manual single form
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [autoPass, setAutoPass] = useState(true);
 
-  // Bulk textarea input
   const [bulkText, setBulkText] = useState('');
   const [bulkPreview, setBulkPreview] = useState([]);
   const [bulkResult, setBulkResult] = useState(null);
 
-  // Fetch students
   const [resetModal, setResetModal] = useState({ isOpen: false, id: null, name: '', newPassword: '' });
-
   const [adminsList, setAdminsList] = useState([]);
   const [selectedAdminId, setSelectedAdminId] = useState('');
-  const [deletionRequests, setDeletionRequests] = useState([]);
+  const [selectedFilterAdminId, setSelectedFilterAdminId] = useState('');
+  const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '', searchTerm: '' });
+
+  const [myRequests, setMyRequests] = useState([]);
+  const [requestStatusFilter, setRequestStatusFilter] = useState('');
 
   const fetchStudents = async () => {
     setLoading(true);
     try {
       const res = await apiService.getStudents();
       setStudents(res.students || []);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
   };
 
-  const fetchDeletionRequests = async () => {
+  const fetchMyRequests = async () => {
     try {
       const res = await apiService.getAdminDeletionRequests();
-      if (res.success) setDeletionRequests(res.requests || []);
+      if (res.success) setMyRequests(res.requests || []);
     } catch (e) { console.error(e); }
   };
 
-  useEffect(() => { 
-    fetchStudents(); 
-    fetchDeletionRequests();
+  useEffect(() => {
+    fetchStudents();
+    fetchMyRequests();
     if (admin?.role === 'super_admin') {
       apiService.getAdmins()
-        .then(res => setAdminsList(res.admins || res.data || []))
+        .then((res) => setAdminsList((res.admins || []).filter((a) => a.role === 'admin')))
         .catch(console.error);
     }
-  }, []);
+  }, [admin?.role]);
 
-  // Password is generated inline in the name onChange handler (no useEffect needed)
+  const handleDelete = async (id, name, email) => {
+    if (admin?.role === 'super_admin') {
+      if (!window.confirm(`Delete student "${name}"? This cannot be undone.`)) return;
+      setError('');
+      try {
+        await apiService.deleteStudent(id);
+        setSuccess(`Student "${name}" deleted successfully.`);
+        fetchStudents();
+      } catch (e) { setError(e.message); }
+    } else {
+      const reason = window.prompt(
+        `Request deletion of student "${name}"?\n\nThe Super Admin must approve this.\n\nOptional reason:`,
+        ''
+      );
+      if (reason === null) return;
+      setError('');
+      try {
+        await apiService.submitDeletionRequest({
+          type: 'student',
+          target_id: id,
+          student_name: name,
+          student_email: email,
+          reason: reason || null,
+        });
+        setSuccess(`Deletion request for "${name}" sent to Super Admin.`);
+        fetchMyRequests();
+      } catch (e) { setError(e.message); }
+    }
+  };
 
   const handleClearData = async () => {
-    if (admin?.role !== 'super_admin') {
-      return setError('Only Super Admins can perform bulk deletions.');
-    }
-    if (window.confirm("Are you sure you want to delete all students? This action cannot be undone.")) {
-      try {
-        setLoading(true);
-        await Promise.all(students.map(student => apiService.deleteStudent(student.id)));
-        setStudents([]);
-        setSuccess('All students deleted successfully.');
-      } catch (err) {
-        setError('Failed to clear students: ' + err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
+    if (admin?.role !== 'super_admin') return setError('Only Super Admins can perform bulk deletions.');
+    if (!window.confirm('Are you sure you want to delete all students? This cannot be undone.')) return;
+    try {
+      setLoading(true);
+      await Promise.all(students.map((s) => apiService.deleteStudent(s.id)));
+      setStudents([]);
+      setSuccess('All students deleted successfully.');
+    } catch (err) {
+      setError('Failed to clear students: ' + err.message);
+    } finally { setLoading(false); }
   };
 
-  /* ── single create ── */
-  /* ── single create ── */
-const handleSingleCreate = async (e) => {
-  e.preventDefault();
-  setError(''); 
-  setSuccess('');
-  
-  if (!form.name || !form.email || !form.password) {
-    return setError('All fields are required.');
-  }
-  
-  if (admin?.role === 'super_admin' && !selectedAdminId) {
-    return setError('Please assign the student to an Admin.');
-  }
-  
-  setActionLoading(true);
-  
-  try {
-    // ✅ CORRECT ENDPOINT: /api/admin/students/create
-    // ✅ CORRECT FORMAT: Send as JSON (not bulk array)
-    const res = await apiService.request('/api/admin/students/create', {
-      method: 'POST',
-      body: JSON.stringify({
-        email: form.email.trim().toLowerCase(),
-        password: form.password,
-        first_name: form.name.trim().split(' ')[0],  // First word is first name
-        last_name: form.name.trim().split(' ').slice(1).join(' ') || null,  // Rest is last name
-        admin_id: selectedAdminId || admin?.id,
-      }),
-    });
-    
-    console.log('✅ Student created:', res);
-    
-    if (res.success && res.data) {
-      setSuccess(`✅ Student "${form.name}" created!\n📧 Email: ${form.email}\n🔑 Password: ${form.password}`);
-      setForm({ name: '', email: '', password: '' });
-      fetchStudents();
-    } else {
-      setError(res.message || 'Failed to create student.');
-    }
-    
-  } catch (e) {
-    console.error('❌ Error:', e);
-    setError(e.message || 'Failed to create student.');
-  }
-  
-  setActionLoading(false);
-};
-
-const handleResetPassword = async (e) => {
-  e.preventDefault();
-  if (!resetModal.newPassword) return setError('Please enter a new password.');
-  try {
+  const handleSingleCreate = async (e) => {
+    e.preventDefault();
+    setError(''); setSuccess('');
+    if (!form.name || !form.email || !form.password) return setError('All fields are required.');
+    if (admin?.role === 'super_admin' && !selectedAdminId) return setError('Please assign the student to an Admin.');
     setActionLoading(true);
-    await apiService.updateStudent(resetModal.id, { password: resetModal.newPassword });
-    setSuccess(`✅ Password for "${resetModal.name}" updated successfully.`);
-    setResetModal({ isOpen: false, id: null, name: '', newPassword: '' });
-  } catch (err) {
-    setError(err.message || 'Failed to update password.');
-  } finally {
+    try {
+      const res = await apiService.request('/api/admin/students/create', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: form.email.trim().toLowerCase(),
+          password: form.password,
+          first_name: form.name.trim().split(' ')[0],
+          last_name: form.name.trim().split(' ').slice(1).join(' ') || null,
+          admin_id: selectedAdminId || admin?.id,
+        }),
+      });
+      if (res.success) {
+        setSuccess(`✅ Student "${form.name}" created!\n📧 Email: ${form.email}\n🔑 Password: ${form.password}`);
+        setForm({ name: '', email: '', password: '' });
+        fetchStudents();
+        setTab('list');
+      } else {
+        setError(res.message || 'Failed to create student.');
+      }
+    } catch (e) { setError(e.message || 'Failed to create student.'); }
     setActionLoading(false);
-  }
-};
+  };
 
-  /* ── bulk text parse ── */
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!resetModal.newPassword) return setError('Please enter a new password.');
+    try {
+      setActionLoading(true);
+      await apiService.updateStudent(resetModal.id, { password: resetModal.newPassword });
+      setSuccess(`✅ Password for "${resetModal.name}" updated.`);
+      setResetModal({ isOpen: false, id: null, name: '', newPassword: '' });
+    } catch (err) { setError(err.message || 'Failed to update password.'); }
+    finally { setActionLoading(false); }
+  };
+
   const parseBulkText = (text) => {
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const parsed = lines.map((line, i) => {
-      // support: "Name, email, password"  OR  "Name, email"  (auto-gen pass)
-      const parts = line.split(',').map(p => p.trim());
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    setBulkPreview(lines.map((line, i) => {
+      const parts = line.split(',').map((p) => p.trim());
       if (parts.length >= 2) {
-        const name = parts[0];
-        const email = parts[1];
-        const password = parts[2] || generatePassword(name);
-        return { name, email, password, _line: i + 1, _valid: !!(name && email) };
+        return {
+          name: parts[0], email: parts[1],
+          password: parts[2] || generatePassword(parts[0]),
+          _line: i + 1, _valid: !!(parts[0] && parts[1]),
+        };
       }
       return { name: line, email: '', password: '', _line: i + 1, _valid: false };
-    });
-    setBulkPreview(parsed);
+    }));
   };
 
-  /* ── csv upload parse ── */
   const handleCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target.result;
-      // skip header row if it contains "name" (case-insensitive)
       const lines = text.split('\n').filter(Boolean);
       const startIdx = lines[0]?.toLowerCase().includes('name') ? 1 : 0;
       const dataLines = lines.slice(startIdx).join('\n');
@@ -264,555 +216,524 @@ const handleResetPassword = async (e) => {
     reader.readAsText(file);
   };
 
-  /* ── bulk submit ── */
-  /* ── bulk submit ── */
-const handleBulkCreate = async () => {
-  setError(''); 
-  setSuccess(''); 
-  setBulkResult(null);
-  
-  const validStudents = bulkPreview
-    .filter(s => s._valid)
-    .map(({ name, email, password }) => ({
-      email: email.toLowerCase(),
-      password: password,
-      first_name: name.trim().split(' ')[0],
-      last_name: name.trim().split(' ').slice(1).join(' ') || null,
-    }));
-  
-  if (!validStudents.length) {
-    return setError('No valid student records found.');
-  }
-
-  if (admin?.role === 'super_admin' && !selectedAdminId) {
-    return setError('Please assign the students to an Admin.');
-  }
-  
-  setActionLoading(true);
-  
-  try {
-    // ✅ Build CSV and use apiService.bulkCreateStudents (correct endpoint)
-    const csvContent = [
-      'email,password,first_name,last_name',
-      ...validStudents.map(s =>
-        `${s.email},${s.password},"${s.first_name}","${s.last_name || ''}"`
-      )
-    ].join('\n');
-    
-    const csvBlob = new Blob([csvContent], { type: 'text/csv' });
-    const csvFile = new File([csvBlob], 'students.csv', { type: 'text/csv' });
-    
-    const targetAdmin = selectedAdminId || admin?.id;
-    const data = await apiService.bulkCreateStudents(csvFile, targetAdmin);
-    console.log('✅ Bulk response:', data);
-    
-    if (data.success) {
-      setBulkResult(data.data);
-      const created = data.data?.summary?.created ?? validStudents.length;
-      setSuccess(`✅ ${created} student(s) created successfully!`);
-      fetchStudents();
-      
-      // Clear form after 3 seconds
-      setTimeout(() => {
-        setBulkText('');
-        setBulkPreview([]);
-      }, 3000);
-    } else {
-      setError(data.message || 'Failed to create students');
-    }
-    
-  } catch (e) {
-    console.error('❌ Error:', e);
-    setError(e.message || 'Failed to create students');
-  }
-  
-  setActionLoading(false);
-};
-
-  /* ── delete ── */
-  const handleDelete = async (id, name, email) => {
-    if (admin?.role === 'super_admin') {
-      if (!window.confirm(`Delete student "${name}"? This cannot be undone.`)) return;
-      setError('');
-      try {
-        await apiService.deleteStudent(id);
-        setSuccess(`Student "${name}" deleted.`);
+  const handleBulkCreate = async () => {
+    setError(''); setSuccess(''); setBulkResult(null);
+    const validStudents = bulkPreview.filter((s) => s._valid)
+      .map(({ name, email, password }) => ({
+        email: email.toLowerCase(), password,
+        first_name: name.trim().split(' ')[0],
+        last_name: name.trim().split(' ').slice(1).join(' ') || null,
+      }));
+    if (!validStudents.length) return setError('No valid student records found.');
+    if (admin?.role === 'super_admin' && !selectedAdminId) return setError('Please assign the students to an Admin.');
+    setActionLoading(true);
+    try {
+      const csvContent = [
+        'email,password,first_name,last_name',
+        ...validStudents.map((s) => `${s.email},${s.password},"${s.first_name}","${s.last_name || ''}"`),
+      ].join('\n');
+      const csvBlob = new Blob([csvContent], { type: 'text/csv' });
+      const csvFile = new File([csvBlob], 'students.csv', { type: 'text/csv' });
+      const targetAdmin = selectedAdminId || admin?.id;
+      const data = await apiService.bulkCreateStudents(csvFile, targetAdmin);
+      if (data.success) {
+        setBulkResult(data.data);
+        const created = data.data?.summary?.created ?? validStudents.length;
+        const createdRows = data.data?.created || [];
+        const sentCount = createdRows.filter((r) => r.email_sent).length;
+        setSuccess(`✅ ${created} student(s) created successfully! 📨 ${sentCount}/${created} credentials email(s) sent.`);
         fetchStudents();
-      } catch (e) { setError(e.message); }
-    } else {
-      if (!window.confirm(`Request deletion of student "${name}"? The Super Admin must approve this.`)) return;
-      setError('');
-      try {
-        await apiService.submitDeletionRequest({ type: 'student', target_id: id, student_name: name, student_email: email });
-        setSuccess(`Deletion request for "${name}" sent to Super Admin.`);
-        fetchDeletionRequests();
-      } catch (e) { setError(e.message); }
-    }
+        setTab('list');
+        setTimeout(() => { setBulkText(''); setBulkPreview([]); }, 3000);
+      } else {
+        setError(data.message || 'Failed to create students');
+      }
+    } catch (e) { setError(e.message || 'Failed to create students'); }
+    setActionLoading(false);
   };
 
-  /* ── filtered list ── */
-  const filtered = students.filter(s =>
+  const adminFilteredStudents = selectedFilterAdminId
+    ? students.filter((s) => String(s.admin_id) === String(selectedFilterAdminId))
+    : students;
+  const searchFilteredStudents = adminFilteredStudents.filter((s) =>
     (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (s.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const finalFilteredStudents = filterByDateRange(searchFilteredStudents, exportFilters.startDate, exportFilters.endDate, 'created_at');
 
-  /* ── styles ── */
-  const tabStyle = (t) => ({
-    padding: '10px 24px', borderRadius: 8, fontWeight: 600, fontSize: 14,
-    border: 'none', cursor: 'pointer', transition: 'all 0.2s',
-    background: tab === t ? 'linear-gradient(135deg,#5B0A7B,#2D0040)' : '#f0f0f5',
-    color: tab === t ? '#fff' : '#555',
-    boxShadow: tab === t ? '0 4px 14px rgba(91,10,123,0.3)' : 'none'
+  const filteredRequests = requestStatusFilter
+    ? myRequests.filter((r) => r.status === requestStatusFilter)
+    : myRequests;
+
+  const pendingCount = myRequests.filter((r) => r.status === 'Pending Approval').length;
+  const adminEmail = admin?.email || 'Administrator';
+  const adminInitial = admin?.name ? admin.name.charAt(0).toUpperCase() : 'A';
+
+  // Component inline styles for premium look
+  const containerStyle = { display: 'flex', minHeight: '100vh', background: '#f8fafc' };
+  const tabBtnStyle = (t) => ({
+    padding: '10px 24px', borderRadius: '8px', fontWeight: '700', fontSize: '13.5px',
+    border: 'none', cursor: 'pointer', transition: 'all 0.15s',
+    background: tab === t ? '#fff' : 'transparent',
+    color: tab === t ? '#4f46e5' : '#64748b',
+    boxShadow: tab === t ? '0 4px 12px rgba(79, 70, 229, 0.08)' : 'none',
   });
 
   const inputStyle = {
-    width: '100%', padding: '12px 14px', fontSize: 14, borderRadius: 10,
-    border: '2px solid #e0e0e0', outline: 'none', boxSizing: 'border-box',
-    transition: 'border 0.2s'
+    width: '100%', padding: '12px 16px', fontSize: '14px', borderRadius: '10px',
+    border: '1.5px solid #e2e8f0', outline: 'none', boxSizing: 'border-box',
+    background: '#fff', color: '#1e293b', transition: 'all 0.2s',
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f5f7fa', fontFamily: 'Inter, sans-serif' }}>
+    <div style={containerStyle}>
       <SharedAdminSidebar active="students" onLogout={() => apiService.logout()} />
 
-      <div style={{ marginLeft: 260, flex: 1 }}>
+      <main className="dashboard-main ep-page" style={{ flex: 1, minWidth: 0 }}>
         {/* Header */}
-        <div style={{
-          background: '#fff', padding: '20px 36px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          position: 'sticky', top: 0, zIndex: 50
-        }}>
+        <div className="ep-page-header">
           <div>
-            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: '#1a1a2e' }}>Student Accounts</h2>
-            <p style={{ margin: '2px 0 0', fontSize: 13, color: '#888' }}>
-              {students.length} student(s) registered
+            <div className="ep-kicker">Manage Platform Candidates</div>
+            <h1>Student Accounts</h1>
+            <p>
+              Showing {students.length} active candidate{students.length === 1 ? '' : 's'}
+              {pendingCount > 0 && (
+                <span className="ep-badge ep-badge-warning" style={{ marginLeft: 12 }}>
+                  ⏳ {pendingCount} Deletion Request{pendingCount > 1 ? 's' : ''} Pending
+                </span>
+              )}
             </p>
           </div>
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 14, color: '#5B0A7B', fontWeight: 600 }}>{admin?.email}</div>
-            <div className="user-avatar" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #5B0A7B, #2D0040)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 15 }}>
-              {admin?.name?.charAt(0)?.toUpperCase()}
+          <div className="ep-user-chip">
+            <div className="avatar">{adminInitial}</div>
+            <div>
+              <strong>{admin?.name || 'Administrator'}</strong>
+              <span>{adminEmail}</span>
             </div>
           </div>
         </div>
 
-        <div style={{ padding: '32px 36px' }}>
-          {/* Alerts */}
-          {success && (
-            <div style={{
-              background: '#e8f5e9', border: '2px solid #4caf50', borderRadius: 12,
-              padding: '14px 20px', marginBottom: 20, color: '#2e7d32', fontWeight: 600,
-              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'
-            }}>
-              <span>{success}</span>
-              <button onClick={() => setSuccess('')} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#2e7d32', lineHeight: 1 }}>×</button>
-            </div>
-          )}
-          {error && (
-            <div style={{
-              background: '#ffebee', border: '2px solid #f44336', borderRadius: 12,
-              padding: '14px 20px', marginBottom: 20, color: '#c62828', fontWeight: 600,
-              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'
-            }}>
-              <span>{error}</span>
-              <button onClick={() => setError('')} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#c62828', lineHeight: 1 }}>×</button>
-            </div>
-          )}
+        {/* Action Feedbacks */}
+        {success && (
+          <div className="ep-alert" style={{ background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', padding: 14, borderRadius: 10, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13.5, whiteSpace: 'pre-line', fontWeight: 600 }}>{success}</span>
+            <button onClick={() => setSuccess('')} style={{ background: 'none', border: 'none', color: '#15803d', fontSize: 18, fontWeight: 'bold', cursor: 'pointer' }}>×</button>
+          </div>
+        )}
+        {error && (
+          <div className="ep-alert" style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', padding: 14, borderRadius: 10, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600 }}>{error}</span>
+            <button onClick={() => setError('')} style={{ background: 'none', border: 'none', color: '#b91c1c', fontSize: 18, fontWeight: 'bold', cursor: 'pointer' }}>×</button>
+          </div>
+        )}
 
-          {/* Tabs */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 28 }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-              <button style={tabStyle('list')} onClick={() => setTab('list')}>👥 Student List</button>
-              <button style={tabStyle('manual')} onClick={() => setTab('manual')}>➕ Add Single</button>
-              <button style={tabStyle('bulk')} onClick={() => setTab('bulk')}>📋 Bulk Create</button>
-            </div>
-            {admin?.role === 'super_admin' && (
-              <button 
-                style={{
-                  padding: '10px 24px', borderRadius: 8, fontWeight: 600, fontSize: 14, 
-                  cursor: 'pointer', transition: 'all 0.2s', 
-                  background: 'transparent', color: '#dc3545', border: '1px solid #dc3545'
-                }} 
-                onClick={handleClearData}
-              >
-                🗑️ Clear Data
+        {/* Tabs Bar */}
+        <div className="toolbar" style={{ marginBottom: 20 }}>
+          <div className="pill-tabs" style={{ background: '#e2e8f0', padding: 4, borderRadius: 10, display: 'inline-flex', gap: 4 }}>
+            <button style={tabBtnStyle('list')} onClick={() => setTab('list')}>👥 Student List</button>
+            <button style={tabBtnStyle('manual')} onClick={() => setTab('manual')}>➕ Add Single</button>
+            <button style={tabBtnStyle('bulk')} onClick={() => setTab('bulk')}>📋 Bulk Create</button>
+            <button style={tabBtnStyle('requests')} onClick={() => setTab('requests')}>
+              🔔 My Requests
+              {pendingCount > 0 && (
+                <span className="badge ms-2" style={{ background: 'var(--ep-danger)', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 12 }}>{pendingCount}</span>
+              )}
+            </button>
+          </div>
+          {admin?.role === 'super_admin' && (
+            <button onClick={handleClearData} className="ep-btn ep-btn-outline" style={{ color: 'var(--ep-danger)', borderColor: 'var(--ep-danger-soft)', fontSize: 13, fontWeight: 700 }}>
+              🗑️ Clear All Students
+            </button>
+          )}
+        </div>
+
+        {/* ═══ TAB: MY REQUESTS ═══ */}
+        {tab === 'requests' && (
+          <div className="ep-card" style={{ padding: 24, background: '#fff' }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap', borderBottom: '1px solid var(--ep-line)', paddingBottom: 16 }}>
+              <span style={{ fontSize: 13, color: 'var(--ep-muted)', fontWeight: 700 }}>Filter Requests:</span>
+              {['', 'Pending Approval', 'Approved', 'Rejected'].map((s) => (
+                <button
+                  key={s || 'all'}
+                  onClick={() => setRequestStatusFilter(s)}
+                  className={`ep-btn ${requestStatusFilter === s ? 'ep-btn-primary' : 'ep-btn-outline'}`}
+                  style={{ padding: '6px 14px', fontSize: 12.5 }}
+                >{s || 'All'}</button>
+              ))}
+              <button onClick={fetchMyRequests} className="ep-btn ep-btn-outline" style={{ padding: '6px 14px', fontSize: 12.5, marginLeft: 'auto' }}>
+                🔄 Refresh
               </button>
+            </div>
+
+            {filteredRequests.length === 0 ? (
+              <div className="ep-empty">
+                <div style={{ fontSize: 48, marginBottom: 8 }}>📭</div>
+                <h4>No requests found</h4>
+                <p>When you request deletion of students, they will list here for Super Admin audit.</p>
+              </div>
+            ) : (
+              <div className="ep-grid ep-grid-2" style={{ gap: 16 }}>
+                {filteredRequests.map((req) => {
+                  const borderColors = {
+                    'Pending Approval': '4px solid var(--ep-warning)',
+                    'Approved': '4px solid var(--ep-success)',
+                    'Rejected': '4px solid var(--ep-danger)',
+                  }[req.status] || '1px solid var(--ep-line)';
+
+                  return (
+                    <div className="ep-card" key={req.id} style={{
+                      padding: 20, background: 'var(--ep-surface-2)',
+                      borderLeft: borderColors,
+                    }}>
+                      <div className="d-flex align-items-center justify-content-between">
+                        <StatusPill status={req.status} />
+                        <span style={{ fontSize: 11, color: 'var(--ep-muted)' }}>ID: #{req.id} • Deletion</span>
+                      </div>
+                      <div style={{ marginTop: 12, fontSize: 15.5, fontWeight: 800, color: 'var(--ep-ink)' }}>
+                        {req.display_name || `Target ID: ${req.target_id}`}
+                      </div>
+                      {req.display_subtitle && (
+                        <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 2 }}>{req.display_subtitle}</div>
+                      )}
+                      {req.reason && (
+                        <div style={{
+                          marginTop: 10, padding: '10px 12px',
+                          background: '#fff', borderRadius: 8,
+                          fontSize: 12.5, color: 'var(--ep-ink-2)',
+                          border: '1px solid var(--ep-line)',
+                        }}>
+                          <strong>Reason:</strong> {req.reason}
+                        </div>
+                      )}
+                      <div style={{ marginTop: 12, fontSize: 11.5, color: 'var(--ep-muted)' }}>
+                        Submitted: {new Date(req.created_at).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
+        )}
 
-          {/* ─── TAB: LIST ─── */}
-          {tab === 'list' && (
-            <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
-              <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0f0f5', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
-                <div style={{ width: '100%', maxWidth: 500 }}>
-                  <input
-                    placeholder="🔍  Search by name or email..."
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    style={{ ...inputStyle, width: '100%', marginBottom: 0 }}
-                  />
+        {/* ═══ TAB: LIST ═══ */}
+        {tab === 'list' && (
+          <>
+            <div className="ep-grid ep-grid-2 mb-3">
+              {admin?.role === 'super_admin' && (
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <select
+                    value={selectedFilterAdminId}
+                    onChange={(e) => setSelectedFilterAdminId(e.target.value)}
+                    style={{ ...inputStyle, fontWeight: '700', color: 'var(--ep-brand)' }}
+                  >
+                    <option value="">All Faculty / Admins</option>
+                    {adminsList.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name || a.email} ({a.email})
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <button
-                  onClick={() => {
-                    if (!students.length) return;
-                    downloadCSV(students.map(s => ({ name: s.name, email: s.email, created: s.created_at })), 'students.csv');
-                  }}
-                  style={{
-                    padding: '10px 20px', background: 'linear-gradient(135deg,#5B0A7B,#2D0040)',
-                    color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: 13
-                  }}
-                >⬇️ Export CSV</button>
+              )}
+              <div className="field" style={{ marginBottom: 0 }}>
+                <input
+                  type="text" placeholder="🔍 Search students by name or email..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div className="ep-card">
+              <div className="ep-card-head" style={{ borderBottom: '1px solid var(--ep-line)', padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Student Directory</h3>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ep-muted)' }}>Registered students eligible for exam access</p>
+                </div>
+                <ExportToolbar
+                  data={finalFilteredStudents}
+                  prepareExportData={prepareStudentsForExport}
+                  filename={getExportFilename('students', 'list')}
+                  onFilterChange={setExportFilters}
+                />
               </div>
 
               {loading ? (
-                <div style={{ padding: 60, textAlign: 'center', color: '#888' }}>Loading students…</div>
-              ) : filtered.length === 0 ? (
-                <div style={{ padding: 60, textAlign: 'center' }}>
-                  <div style={{ fontSize: 56, marginBottom: 12 }}>👤</div>
-                  <p style={{ color: '#888', fontSize: 15 }}>No students found. Use the tabs above to add students.</p>
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--ep-muted)' }}>
+                  <div className="spinner-border spinner-border-sm text-primary me-2" />
+                  Loading students Directory...
+                </div>
+              ) : finalFilteredStudents.length === 0 ? (
+                <div className="ep-empty">
+                  <div style={{ fontSize: 48, marginBottom: 8 }}>👥</div>
+                  <h4>No students found</h4>
+                  <p>Try clearing filters or add a student to begin.</p>
                 </div>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ background: '#f8f6fc' }}>
-                      {['#', 'Name', 'Email', 'Joined', 'Action'].map(h => (
-                        <th key={h} style={{ padding: '14px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((s, i) => (
-                      <tr key={s.id} style={{ borderTop: '1px solid #f0f0f5', transition: 'background 0.15s' }}
-                        onMouseEnter={e => e.currentTarget.style.background = '#fdfcff'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#999' }}>{i + 1}</td>
-                        <td style={{ padding: '14px 20px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <div style={{
-                              width: 34, height: 34, borderRadius: '50%',
-                              background: `hsl(${(s.name.charCodeAt(0) * 47) % 360},60%,55%)`,
-                              color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontWeight: 700, fontSize: 14, flexShrink: 0
-                            }}>{s.name.charAt(0).toUpperCase()}</div>
-                            <span style={{ fontWeight: 600, fontSize: 14, color: '#1a1a2e' }}>{s.name}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#555' }}>{s.email}</td>
-                        <td style={{ padding: '14px 20px', fontSize: 12, color: '#888' }}>
-                          {new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </td>
-                        <td style={{ padding: '14px 20px' }}>
-                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                            <button onClick={() => setResetModal({ isOpen: true, id: s.id, name: s.name, newPassword: '' })}
-                              style={{
-                                padding: '7px 12px', background: '#fff', border: '2px solid #e0e0e0',
-                                borderRadius: 8, color: '#555', fontWeight: 600, fontSize: 12, cursor: 'pointer',
-                                transition: 'all 0.2s'
-                              }}
-                              onMouseEnter={e => { e.currentTarget.style.background = '#f5f5f5'; e.currentTarget.style.borderColor = '#ccc'; }}
-                              onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#e0e0e0'; }}
-                            >🔑 Reset Pass</button>
-                            
-                            {(() => {
-                              const pendingReq = deletionRequests.find(r => String(r.target_id) === String(s.id) && r.type === 'student');
-                              if (pendingReq && pendingReq.status === 'Pending Approval') {
-                                return <span style={{ padding: '6px 10px', background: '#fff3cd', color: '#856404', borderRadius: 8, fontSize: 12, fontWeight: 600, border: '1px solid #ffeeba' }}>⏳ Pending Approval</span>;
-                              }
-                              if (pendingReq && pendingReq.status === 'Rejected') {
-                                return (
-                                  <>
-                                    <span style={{ padding: '6px 10px', background: '#f8d7da', color: '#721c24', borderRadius: 8, fontSize: 12, fontWeight: 600, border: '1px solid #f5c6cb' }}>❌ Rejected</span>
-                                    <button onClick={() => handleDelete(s.id, s.name, s.email)}
-                                      style={{
-                                        padding: '7px 12px', background: '#fff', border: '2px solid #ffcdd2',
-                                        borderRadius: 8, color: '#c62828', fontWeight: 600, fontSize: 12, cursor: 'pointer',
-                                        transition: 'all 0.2s'
-                                      }}
-                                      onMouseEnter={e => { e.currentTarget.style.background = '#ffebee'; e.currentTarget.style.borderColor = '#f44336'; }}
-                                      onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#ffcdd2'; }}
-                                    >🗑 Retry Delete</button>
-                                  </>
-                                );
-                              }
-                              return (
-                                <button onClick={() => handleDelete(s.id, s.name, s.email)}
-                                  style={{
-                                    padding: '7px 12px', background: '#fff', border: '2px solid #ffcdd2',
-                                    borderRadius: 8, color: '#c62828', fontWeight: 600, fontSize: 12, cursor: 'pointer',
-                                    transition: 'all 0.2s'
-                                  }}
-                                  onMouseEnter={e => { e.currentTarget.style.background = '#ffebee'; e.currentTarget.style.borderColor = '#f44336'; }}
-                                  onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#ffcdd2'; }}
-                                >🗑 Delete</button>
-                              );
-                            })()}
-                          </div>
-                        </td>
+                <div className="table-wrap">
+                  <table className="ep-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Assigned Admin</th>
+                        <th>Joined Date</th>
+                        <th style={{ textAlign: 'center' }}>Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {finalFilteredStudents.map((s, i) => {
+                        const pendingReq = myRequests.find(
+                          (r) => String(r.target_id) === String(s.id) && r.type === 'student' && r.status === 'Pending Approval'
+                        );
+                        const rejectedReq = myRequests.find(
+                          (r) => String(r.target_id) === String(s.id) && r.type === 'student' && r.status === 'Rejected'
+                        );
+
+                        return (
+                          <tr key={s.id} className="row-hover">
+                            <td>{i + 1}</td>
+                            <td className="cell-strong">{s.name}</td>
+                            <td>{s.email}</td>
+                            <td>
+                              {(() => {
+                                const found = adminsList.find((a) => String(a.id) === String(s.admin_id));
+                                return found ? `${found.name || found.email}` : (s.admin_id ? `Admin #${s.admin_id}` : '—');
+                              })()}
+                            </td>
+                            <td>
+                              {new Date(s.created_at).toLocaleDateString('en-IN', {
+                                day: 'numeric', month: 'short', year: 'numeric',
+                              })}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                <button
+                                  onClick={() => setResetModal({ isOpen: true, id: s.id, name: s.name, newPassword: '' })}
+                                  className="ep-btn ep-btn-outline"
+                                  style={{ padding: '4px 10px', fontSize: 11.5 }}
+                                >
+                                  🔑 Reset Pass
+                                </button>
+
+                                {pendingReq ? (
+                                  <span className="ep-badge ep-badge-warning" style={{ fontSize: 11.5 }}>
+                                    ⏳ Pending Approval
+                                  </span>
+                                ) : rejectedReq ? (
+                                  <button
+                                    onClick={() => handleDelete(s.id, s.name, s.email)}
+                                    className="ep-btn ep-btn-outline"
+                                    style={{ padding: '4px 10px', fontSize: 11.5, color: 'var(--ep-danger)', borderColor: 'var(--ep-danger-soft)' }}
+                                  >
+                                    🗑 Retry Delete
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleDelete(s.id, s.name, s.email)}
+                                    className="ep-btn ep-btn-outline"
+                                    style={{ padding: '4px 10px', fontSize: 11.5, color: 'var(--ep-danger)' }}
+                                  >
+                                    🗑 Delete
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
-          )}
+          </>
+        )}
 
-          {/* ─── TAB: MANUAL SINGLE ─── */}
-          {tab === 'manual' && (
-            <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.07)', padding: 36, maxWidth: 560 }}>
-              <h3 style={{ margin: '0 0 6px', color: '#1a1a2e', fontSize: 18, fontWeight: 700 }}>Add Single Student</h3>
-              <p style={{ margin: '0 0 28px', color: '#888', fontSize: 13 }}>Create one student account manually.</p>
-              <form onSubmit={handleSingleCreate}>
-                <div style={{ marginBottom: 20 }}>
-                  <label style={{ fontWeight: 600, fontSize: 13, color: '#444', display: 'block', marginBottom: 8 }}>Full Name *</label>
-                  <input style={inputStyle} placeholder="e.g. Ravi Kumar"
+        {/* ═══ TAB: MANUAL ═══ */}
+        {tab === 'manual' && (
+          <div className="ep-card" style={{ maxWidth: 640, margin: '0 auto', padding: 28 }}>
+            <div className="ep-card-head" style={{ borderBottom: '1px solid var(--ep-line)', paddingBottom: 12, marginBottom: 20 }}>
+              <h3 style={{ margin: 0, fontSize: 16 }}>➕ Create Single Student Account</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ep-muted)' }}>Add individual student candidates instantly.</p>
+            </div>
+            <form onSubmit={handleSingleCreate}>
+              <div className="form-row">
+                <div className="field">
+                  <label>Full Name *</label>
+                  <input type="text" required
                     value={form.name}
-                    onChange={e => {
-                      const newName = e.target.value;
-                      setForm(f => ({
-                        ...f,
-                        name: newName,
-                        password: autoPass && newName.trim() ? generatePassword(newName) : f.password
-                      }));
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setForm({ ...form, name: v });
+                      if (autoPass) setForm((f) => ({ ...f, password: generatePassword(v) }));
                     }}
-                    onFocus={e => e.target.style.borderColor = '#5B0A7B'}
-                    onBlur={e => e.target.style.borderColor = '#e0e0e0'}
+                    placeholder="e.g. John Doe"
+                    style={inputStyle}
                   />
                 </div>
-                <div style={{ marginBottom: 20 }}>
-                  <label style={{ fontWeight: 600, fontSize: 13, color: '#444', display: 'block', marginBottom: 8 }}>Email Address *</label>
-                  <input style={inputStyle} type="email" placeholder="e.g. ravi@school.com"
-                    value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                    onFocus={e => e.target.style.borderColor = '#5B0A7B'}
-                    onBlur={e => e.target.style.borderColor = '#e0e0e0'}
+                <div className="field">
+                  <label>Email Address *</label>
+                  <input type="email" required
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    placeholder="e.g. john@university.edu"
+                    style={inputStyle}
                   />
                 </div>
-                <div style={{ marginBottom: 28 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <label style={{ fontWeight: 600, fontSize: 13, color: '#444' }}>Password *</label>
-                    <label style={{ fontSize: 12, color: '#5B0A7B', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <input type="checkbox" checked={autoPass} onChange={e => {
-                        const checked = e.target.checked;
-                        setAutoPass(checked);
-                        if (checked && form.name.trim()) {
-                          setForm(f => ({ ...f, password: generatePassword(f.name) }));
-                        }
-                      }} />
-                      Auto-generate
-                    </label>
-                  </div>
-                  <input style={{ ...inputStyle, background: autoPass ? '#f9f6fc' : '#fff' }}
-                    placeholder="Password" value={form.password} readOnly={autoPass}
-                    onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                    onFocus={e => e.target.style.borderColor = '#5B0A7B'}
-                    onBlur={e => e.target.style.borderColor = '#e0e0e0'}
-                  />
-                </div>
-
-                {admin?.role === 'super_admin' && (
-                  <div style={{ marginBottom: 28 }}>
-                    <label style={{ fontWeight: 600, fontSize: 13, color: '#444', display: 'block', marginBottom: 8 }}>Assign to Admin *</label>
-                    <select
-                      style={inputStyle}
-                      value={selectedAdminId}
-                      onChange={e => setSelectedAdminId(e.target.value)}
-                    >
-                      <option value="">-- Select an Admin --</option>
-                      {adminsList.map(a => (
-                        <option key={a.id} value={a.id}>{a.name} ({a.email})</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <button type="submit" disabled={actionLoading}
-                  style={{
-                    width: '100%', padding: 14, background: 'linear-gradient(135deg,#5B0A7B,#2D0040)',
-                    color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15,
-                    cursor: actionLoading ? 'not-allowed' : 'pointer',
-                    boxShadow: '0 4px 16px rgba(91,10,123,0.35)'
-                  }}>
-                  {actionLoading ? '⏳ Creating…' : '✅ Create Student Account'}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* ─── TAB: BULK ─── */}
-          {tab === 'bulk' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
-              {/* Left: Input */}
-              <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.07)', padding: 32 }}>
-                <h3 style={{ margin: '0 0 4px', color: '#1a1a2e', fontSize: 17, fontWeight: 700 }}>Bulk Create Students</h3>
-                <p style={{ margin: '0 0 20px', color: '#888', fontSize: 13 }}>
-                  Paste student data or upload a CSV file.
-                </p>
-
-                {/* Format guide */}
-                <div style={{ background: '#f8f6fc', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
-                  <p style={{ margin: '0 0 6px', fontWeight: 700, fontSize: 12, color: '#5B0A7B' }}>FORMAT (one per line):</p>
-                  <code style={{ fontSize: 12, color: '#333', display: 'block', lineHeight: 1.8 }}>
-                    Name, email@domain.com, password<br />
-                    Name, email@domain.com  ← (password auto-generated)
-                  </code>
-                </div>
-
-                {/* CSV Upload */}
-                <div style={{ marginBottom: 16 }}>
-                  <input ref={fileRef} type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleCSVUpload} />
-                  <button onClick={() => fileRef.current.click()} style={{
-                    width: '100%', padding: '10px 0', border: '2px dashed #c7b0e0',
-                    borderRadius: 10, background: '#fdfcff', color: '#5B0A7B',
-                    fontWeight: 600, fontSize: 13, cursor: 'pointer'
-                  }}>📎 Upload CSV / TXT File</button>
-                </div>
-
-                <div style={{ marginBottom: 4, fontWeight: 600, fontSize: 13, color: '#444' }}>Or paste directly:</div>
-                <textarea
-                  rows={10}
-                  placeholder={`Aarav Shah, aarav@school.com, pass123\nPriya Patel, priya@school.com\nRohan Mehta, rohan@school.com, secure456`}
-                  value={bulkText}
-                  onChange={e => { setBulkText(e.target.value); parseBulkText(e.target.value); }}
-                  style={{
-                    width: '100%', padding: 14, fontSize: 13, borderRadius: 10,
-                    border: '2px solid #e0e0e0', resize: 'vertical', outline: 'none',
-                    fontFamily: 'monospace', lineHeight: 1.7, boxSizing: 'border-box'
-                  }}
-                  onFocus={e => e.target.style.borderColor = '#5B0A7B'}
-                  onBlur={e => e.target.style.borderColor = '#e0e0e0'}
+              </div>
+              <div className="field">
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Password *</span>
+                  <span onClick={() => { setAutoPass(!autoPass); if (!autoPass) setForm({ ...form, password: generatePassword(form.name) }); }}
+                    style={{ color: 'var(--ep-brand)', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
+                    {autoPass ? '🔄 Switch to Manual' : '✏️ Switch to Auto'}
+                  </span>
+                </label>
+                <input type="text" required
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  readOnly={autoPass}
+                  style={{ ...inputStyle, background: autoPass ? 'var(--ep-surface-2)' : '#fff' }}
                 />
-
-                {admin?.role === 'super_admin' && (
-                  <div style={{ marginTop: 16 }}>
-                    <label style={{ fontWeight: 600, fontSize: 13, color: '#444', display: 'block', marginBottom: 8 }}>Assign to Admin *</label>
-                    <select
-                      style={inputStyle}
-                      value={selectedAdminId}
-                      onChange={e => setSelectedAdminId(e.target.value)}
-                    >
-                      <option value="">-- Select an Admin --</option>
-                      {adminsList.map(a => (
-                        <option key={a.id} value={a.id}>{a.name} ({a.email})</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-                  <button onClick={handleBulkCreate} disabled={actionLoading || !bulkPreview.filter(s => s._valid).length}
-                    style={{
-                      flex: 1, padding: 14, background: 'linear-gradient(135deg,#5B0A7B,#2D0040)',
-                      color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14,
-                      cursor: actionLoading ? 'not-allowed' : 'pointer',
-                      opacity: (!bulkPreview.filter(s => s._valid).length && !actionLoading) ? 0.5 : 1,
-                      boxShadow: '0 4px 16px rgba(91,10,123,0.3)'
-                    }}>
-                    {actionLoading ? '⏳ Creating…' : `🚀 Create ${bulkPreview.filter(s => s._valid).length} Student(s)`}
-                  </button>
-                  <button onClick={() => { setBulkText(''); setBulkPreview([]); setBulkResult(null); setError(''); setSuccess(''); }}
-                    style={{
-                      padding: '14px 20px', background: '#f5f5f5', border: 'none',
-                      borderRadius: 10, color: '#555', fontWeight: 600, cursor: 'pointer', fontSize: 14
-                    }}>Clear</button>
-                </div>
               </div>
-
-              {/* Right: Preview */}
-              <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.07)', padding: 32 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <h3 style={{ margin: 0, color: '#1a1a2e', fontSize: 17, fontWeight: 700 }}>Preview</h3>
-                  {bulkResult?.created?.length > 0 && (
-                    <button onClick={() => downloadCSV(bulkResult.created, 'new_students_credentials.csv')}
-                      style={{
-                        padding: '8px 16px', background: 'linear-gradient(135deg,#2e7d32,#1b5e20)',
-                        color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600,
-                        cursor: 'pointer', fontSize: 12
-                      }}>⬇️ Download Credentials</button>
-                  )}
-                </div>
-
-                {bulkResult && (
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      {[
-                        { label: 'Created', count: bulkResult.created?.length, color: '#4caf50', bg: '#e8f5e9' },
-                        { label: 'Skipped', count: bulkResult.skipped?.length, color: '#ff9800', bg: '#fff3e0' },
-                        { label: 'Errors', count: bulkResult.errors?.length, color: '#f44336', bg: '#ffebee' },
-                      ].map(stat => (
-                        <div key={stat.label} style={{ flex: 1, background: stat.bg, borderRadius: 10, padding: '10px 14px', textAlign: 'center' }}>
-                          <div style={{ fontSize: 22, fontWeight: 800, color: stat.color }}>{stat.count}</div>
-                          <div style={{ fontSize: 11, color: stat.color, fontWeight: 600 }}>{stat.label}</div>
-                        </div>
-                      ))}
-                    </div>
-                    {bulkResult.skipped?.length > 0 && (
-                      <div style={{ marginTop: 10, padding: '8px 12px', background: '#fff8e1', borderRadius: 8, fontSize: 12, color: '#856404' }}>
-                        ⚠️ Already exist: {bulkResult.skipped.join(', ')}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {bulkPreview.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '40px 0', color: '#bbb' }}>
-                    <div style={{ fontSize: 40, marginBottom: 10 }}>📋</div>
-                    <p style={{ fontSize: 13 }}>Paste or upload student data to see a preview here.</p>
-                  </div>
-                ) : (
-                  <div style={{ maxHeight: 420, overflowY: 'auto' }}>
-                    {bulkPreview.map((s, i) => (
-                      <div key={i} style={{
-                        padding: '10px 14px', borderRadius: 10, marginBottom: 8,
-                        background: s._valid ? '#f8f6fc' : '#fff4f4',
-                        border: `1px solid ${s._valid ? '#e0d6f0' : '#ffcdd2'}`
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <span style={{ fontWeight: 700, fontSize: 13, color: s._valid ? '#1a1a2e' : '#c62828' }}>{s.name || '(no name)'}</span>
-                            <span style={{ fontSize: 12, color: '#777', marginLeft: 8 }}>{s.email || '(no email)'}</span>
-                          </div>
-                          <span style={{
-                            fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20,
-                            background: s._valid ? '#e8f5e9' : '#ffebee',
-                            color: s._valid ? '#2e7d32' : '#c62828'
-                          }}>{s._valid ? '✓ VALID' : '✗ ERROR'}</span>
-                        </div>
-                        {s._valid && (
-                          <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
-                            🔑 Password: <code style={{ color: '#5B0A7B' }}>{s.password}</code>
-                          </div>
-                        )}
-                      </div>
+              {admin?.role === 'super_admin' && (
+                <div className="field">
+                  <label>Assign to Faculty Admin *</label>
+                  <select required
+                    value={selectedAdminId}
+                    onChange={(e) => setSelectedAdminId(e.target.value)}
+                    style={inputStyle}
+                  >
+                    <option value="">Select admin…</option>
+                    {adminsList.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
                     ))}
-                  </div>
-                )}
+                  </select>
+                </div>
+              )}
+              <div className="field-help" style={{ marginBottom: 14 }}>
+                Tip: Share credentials with the student. They can easily reset their password upon logging in.
               </div>
-            </div>
-          )}
-        </div>
-      </div>
+              <button type="submit" disabled={actionLoading} className="ep-btn ep-btn-primary ep-btn-block" style={{ marginTop: 10 }}>
+                {actionLoading ? 'Creating Candidate…' : '➕ Create Student Account'}
+              </button>
+            </form>
+          </div>
+        )}
 
-      {/* ─── RESET PASSWORD MODAL ─── */}
-      {resetModal.isOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#fff', borderRadius: 16, padding: 32, width: 400, boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
-            <h3 style={{ margin: '0 0 10px', fontSize: 18, color: '#1a1a2e' }}>Reset Password</h3>
-            <p style={{ margin: '0 0 20px', fontSize: 13, color: '#666' }}>Enter a new password for <strong>{resetModal.name}</strong></p>
-            <form onSubmit={handleResetPassword}>
-              <input 
-                type="text"
-                placeholder="New Password"
-                value={resetModal.newPassword}
-                onChange={e => setResetModal({ ...resetModal, newPassword: e.target.value })}
-                style={{ width: '100%', padding: '12px 14px', fontSize: 14, borderRadius: 10, border: '2px solid #e0e0e0', outline: 'none', boxSizing: 'border-box', marginBottom: 20 }}
+        {/* ═══ TAB: BULK ═══ */}
+        {tab === 'bulk' && (
+          <div className="ep-card" style={{ maxWidth: 700, margin: '0 auto', padding: 28 }}>
+            <div className="ep-card-head" style={{ borderBottom: '1px solid var(--ep-line)', paddingBottom: 12, marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16 }}>📋 Bulk Create Student Accounts</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ep-muted)' }}>Paste raw CSV/list or upload a text file directly.</p>
+            </div>
+            <div className="ep-alert tips" style={{ background: 'var(--ep-info-soft)', color: '#0369a1', border: '1px solid #bae6fd', padding: 12, borderRadius: 10, fontSize: 12.5, marginBottom: 16 }}>
+              Format structure: <code>Name, Email, Password</code> (one candidate per line). Password is optional and will auto-generate if omitted.
+            </div>
+            <div className="field">
+              <label>Upload File (.csv, .txt)</label>
+              <input type="file" accept=".csv,.txt" onChange={handleCSVUpload} style={{ ...inputStyle, padding: '8px 12px' }} />
+            </div>
+            <div className="field">
+              <label>Or Paste Student List</label>
+              <textarea
+                placeholder={`John Doe, john@example.com, Pass@123\nJane Smith, jane@example.com`}
+                value={bulkText}
+                onChange={(e) => { setBulkText(e.target.value); parseBulkText(e.target.value); }}
+                rows={6}
+                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12.5 }}
               />
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setResetModal({ isOpen: false, id: null, name: '', newPassword: '' })}
-                  style={{ padding: '10px 16px', borderRadius: 8, border: 'none', background: '#e0e0e0', color: '#555', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" disabled={actionLoading}
-                  style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#5B0A7B,#2D0040)', color: '#fff', fontWeight: 600, cursor: actionLoading ? 'not-allowed' : 'pointer' }}>
-                  {actionLoading ? 'Updating...' : 'Update Password'}
+            </div>
+            {bulkPreview.length > 0 && (
+              <div style={{ margin: '12px 0', padding: 10, background: 'var(--ep-brand-soft)', borderRadius: 8, fontSize: 13, color: 'var(--ep-brand)', fontWeight: 600 }}>
+                📊 Parsing Check: {bulkPreview.filter((s) => s._valid).length} valid entries ready out of {bulkPreview.length} lines total.
+              </div>
+            )}
+            {admin?.role === 'super_admin' && (
+              <div className="field">
+                <label>Assign to Faculty Admin *</label>
+                <select value={selectedAdminId} onChange={(e) => setSelectedAdminId(e.target.value)} style={inputStyle}>
+                  <option value="">Select admin…</option>
+                  {adminsList.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name || a.email} ({a.email})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <button onClick={handleBulkCreate} disabled={actionLoading} className="ep-btn ep-btn-primary ep-btn-block" style={{ marginTop: 12 }}>
+              {actionLoading ? 'Executing bulk import…' : '🚀 Import Student Accounts'}
+            </button>
+            {bulkResult && (
+              <div style={{ marginTop: 14, padding: 12, background: 'var(--ep-surface-2)', borderRadius: 8, fontSize: 13, border: '1px solid var(--ep-line)' }}>
+                <div>✅ Successful Creations: <strong>{bulkResult.summary?.created || 0}</strong></div>
+                {bulkResult.skipped?.length > 0 && <div>⚠️ Skipped lines: {bulkResult.skipped.length}</div>}
+                {bulkResult.errors?.length > 0 && <div style={{ color: 'var(--ep-danger)' }}>❌ Errors: {bulkResult.errors.length}</div>}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* Password Reset Modal */}
+      {resetModal.isOpen && (
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(15,23,42,0.55)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000, padding: 20,
+        }}>
+          <div className="ep-card" style={{
+            background: '#fff', borderRadius: 16, padding: 24,
+            width: '100%', maxWidth: 390, boxShadow: 'var(--ep-shadow-lg)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+              <div>
+                <h3 style={{ margin: 0, color: 'var(--ep-ink)', fontSize: 18, fontWeight: 800 }}>🔑 Reset Password</h3>
+                <div style={{ color: 'var(--ep-muted)', fontSize: 13, marginTop: 3 }}>Change password for student: <strong>{resetModal.name}</strong></div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResetModal({ isOpen: false, id: null, name: '', newPassword: '' })}
+                style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--ep-muted)', lineHeight: 1 }}
+              >×</button>
+            </div>
+
+            <form onSubmit={handleResetPassword}>
+              <div className="field">
+                <label>New Password</label>
+                <input
+                  type="text"
+                  required
+                  value={resetModal.newPassword}
+                  onChange={(e) => setResetModal({ ...resetModal, newPassword: e.target.value })}
+                  placeholder="Enter secure new password"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+                <button
+                  type="button"
+                  className="ep-btn ep-btn-outline"
+                  onClick={() => setResetModal({ isOpen: false, id: null, name: '', newPassword: '' })}
+                  style={{ flex: 1 }}
+                  disabled={actionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="ep-btn ep-btn-primary"
+                  style={{ flex: 1 }}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Updating...' : 'Save Password'}
                 </button>
               </div>
             </form>
@@ -824,4 +745,3 @@ const handleBulkCreate = async () => {
 };
 
 export default StudentManagement;
-
